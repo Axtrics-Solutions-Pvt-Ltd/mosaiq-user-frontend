@@ -1,0 +1,5 @@
+'use client';
+import {useState} from 'react';
+import styles from './auth.module.css';
+
+export default function PasswordField({id,label,name,placeholder='Enter your password',autoComplete='current-password',minLength,error,hint,onChange}){const [visible,setVisible]=useState(false);return <div className={styles.field}><label htmlFor={id}>{label}</label><div className={styles.inputWrap}><input className={`${styles.input} ${styles.inputWithAction}`} id={id} name={name} type={visible?'text':'password'} placeholder={placeholder} autoComplete={autoComplete} minLength={minLength} aria-invalid={Boolean(error)} aria-describedby={error||hint?`${id}-help`:undefined} onChange={onChange} required/><button className={styles.inputAction} type="button" aria-controls={id} aria-label={`${visible?'Hide':'Show'} ${label.toLowerCase()}`} aria-pressed={visible} onClick={()=>setVisible(v=>!v)}>{visible?'Hide':'Show'}</button></div>{(error||hint)&&<p className={error?styles.error:styles.helper} id={`${id}-help`} role={error?'alert':undefined} aria-live={error?'assertive':'polite'}>{error||hint}</p>}</div>}

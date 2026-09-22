@@ -1,0 +1,5 @@
+{
+  "/login/page": "app/login/page.js",
+  "/api/laravel/[...path]/route": "app/api/laravel/[...path]/route.js",
+  "/page": "app/page.js"
+}

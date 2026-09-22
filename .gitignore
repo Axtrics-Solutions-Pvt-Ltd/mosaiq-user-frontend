@@ -1,0 +1,7 @@
+node_modules
+.next
+.next-build
+out
+dist
+.env*.local
+next-env.d.ts
