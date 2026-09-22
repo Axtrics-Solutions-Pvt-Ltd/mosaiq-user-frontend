@@ -7,7 +7,7 @@ import { ApiErrorState, ButtonProgress, SuccessState } from '../components/state
 import PasswordField from '../PasswordField';
 import styles from '../auth.module.css';
 import { authApi, isMockAuthEnabled } from '../../lib/api';
-import { firstFieldErrors, passwordChecks, validateEmail, validatePassword } from '../../lib/validation';
+import { firstFieldErrors, passwordChecks, userFriendlyFieldErrors, validateEmail, validatePassword } from '../../lib/validation';
 
 function resetLinkParams() {
   const queryParams = new URLSearchParams(window.location.search);
@@ -26,6 +26,7 @@ function resetPasswordMessage(error) {
   const fieldErrors = firstFieldErrors(error);
   if (fieldErrors.token) return 'This reset link is invalid or expired. Please request a new password reset link.';
   if (fieldErrors.email) return fieldErrors.email;
+  if (fieldErrors.password) return 'Password must include at least 8 characters, one letter, and one number.';
   return error.message;
 }
 
@@ -36,20 +37,31 @@ export default function ResetPassword() {
   const [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState('');
   const [requestError, setRequestError] = useState('');
+  const [linkError, setLinkError] = useState('');
   const [fields, setFields] = useState({});
   const [checks, setChecks] = useState(passwordChecks(''));
+  const [passwordResetKey, setPasswordResetKey] = useState(0);
 
   useEffect(() => {
     const params = resetLinkParams();
     setEmail(params.email);
     setLinkEmail(params.email);
     setToken(params.token);
+    if (!params.token) {
+      setLinkError('This reset link is invalid or expired. Please request a new password reset link.');
+    } else if (!params.email) {
+      setLinkError('This reset link is missing the email address. Please request a new password reset link.');
+    } else {
+      setLinkError('');
+    }
   }, []);
 
   async function submit(event) {
     event.preventDefault();
+    const form = event.currentTarget;
     setSuccess('');
     setRequestError('');
+    if (linkError) return;
     const data = new FormData(event.currentTarget);
     const password = String(data.get('password') || '');
     const confirmation = String(data.get('confirmation') || '');
@@ -62,15 +74,26 @@ export default function ResetPassword() {
     if (!validation.email && linkEmail && normalizeEmail(email) !== normalizeEmail(linkEmail)) {
       validation.email = 'Use the email address from your password reset link.';
     }
+    if (validation.token) setLinkError(validation.token);
     setFields(validation);
     if (Object.values(validation).some(Boolean)) return;
     setBusy(true);
     try {
       const result = await authApi.resetPassword({ token, email, password, password_confirmation: confirmation });
       setSuccess(result?.message || 'Your password has been reset successfully.');
+      setFields({});
+      setChecks(passwordChecks(''));
+      form.reset();
+      setPasswordResetKey((value) => value + 1);
     } catch (error) {
-      setRequestError(resetPasswordMessage(error));
-      setFields((current) => ({ ...current, ...firstFieldErrors(error) }));
+      const backendFields = firstFieldErrors(error);
+      const friendlyFields = userFriendlyFieldErrors(error);
+      if (backendFields.token) {
+        setLinkError(resetPasswordMessage(error));
+      } else {
+        setRequestError(resetPasswordMessage(error));
+      }
+      setFields((current) => ({ ...current, ...friendlyFields }));
     } finally {
       setBusy(false);
     }
@@ -83,17 +106,19 @@ export default function ResetPassword() {
     <p className={styles.subtitle}>Choose a secure password with at least 8 characters, one letter, and one number.</p>
     <form className={styles.form} onSubmit={submit} noValidate aria-busy={busy}>
       {isMockAuthEnabled && <div className={styles.notice}>Use token <strong>expired-demo</strong> or <strong>server-error-demo</strong> in the URL to test failures.</div>}
-      {success && <SuccessState compact title="Password updated" message={success}/>} 
-      {requestError && <ApiErrorState compact title="Password reset failed" message={requestError}/>} 
+      {success && <SuccessState compact title="" message={success}/>} 
+      {linkError && <ApiErrorState compact title="" message={linkError}/>}
+      {requestError && <ApiErrorState compact title="" message={requestError}/>}
       <div className={styles.field}>
         <label htmlFor="email">Email address</label>
         <input className={styles.input} id="email" name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" autoComplete="email" readOnly={Boolean(linkEmail)} aria-invalid={Boolean(fields.email)} aria-describedby={fields.email ? 'reset-email-help' : undefined} required/>
         {fields.email && <p className={styles.error} id="reset-email-help" role="alert">{fields.email}</p>}
       </div>
-      {fields.token && <div className={styles.error} role="alert">{fields.token}</div>}
-      <PasswordField id="new-password" name="password" label="New password" autoComplete="new-password" minLength={8} error={fields.password} hint={passwordHint} onChange={(event) => setChecks(passwordChecks(event.target.value))}/>
-      <PasswordField id="confirmation" name="confirmation" label="Confirm new password" autoComplete="new-password" minLength={8} error={fields.confirmation}/>
-      <button className={styles.button} type="submit" disabled={busy}>{busy ? <ButtonProgress label="Resetting…"/> : 'Reset password'}</button>
+      {linkError ? <Link className={styles.button} href="/forgot-password">Request new reset link</Link> : <>
+        <PasswordField key={`password-${passwordResetKey}`} id="new-password" name="password" label="New password" autoComplete="new-password" minLength={8} error={fields.password} hint={passwordHint} onChange={(event) => setChecks(passwordChecks(event.target.value))}/>
+        <PasswordField key={`confirmation-${passwordResetKey}`} id="confirmation" name="confirmation" label="Confirm new password" autoComplete="new-password" minLength={8} error={fields.confirmation}/>
+        <button className={styles.button} type="submit" disabled={busy}>{busy ? <ButtonProgress label="Resetting…"/> : 'Reset password'}</button>
+      </>}
     </form>
   </AuthShell>;
 }
