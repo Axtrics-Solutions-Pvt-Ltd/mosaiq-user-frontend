@@ -5,11 +5,14 @@ import styles from './states.module.css';
 
 function StateView({ title, message, icon, tone = 'default', actionLabel, onAction, secondaryLabel, onSecondary, compact = false, role = 'status', headingLevel = 'h2' }) {
   const iconClass = tone === 'danger' ? styles.dangerIcon : tone === 'success' ? styles.successIcon : tone === 'warning' ? styles.warningIcon : '';
+  const toneClass = tone === 'danger' ? styles.dangerState : tone === 'success' ? styles.successState : tone === 'warning' ? styles.warningState : '';
   const Heading = headingLevel;
-  const body = <div className={compact ? styles.compact : styles.panel} role={role} aria-live={role === 'alert' ? 'assertive' : 'polite'}>
+  const text = compact
+    ? <div className={styles.compactText}>{title && <Heading className={styles.title}>{title}</Heading>}{message && <p className={styles.message}>{message}</p>}</div>
+    : <><Heading className={styles.title}>{title}</Heading>{message && <p className={styles.message}>{message}</p>}</>;
+  const body = <div className={`${compact ? styles.compact : styles.panel} ${toneClass}`} role={role} aria-live={role === 'alert' ? 'assertive' : 'polite'}>
     <div className={`${styles.icon} ${iconClass}`} aria-hidden="true">{icon}</div>
-    <Heading className={styles.title}>{title}</Heading>
-    {message && <p className={styles.message}>{message}</p>}
+    {text}
     {(actionLabel || secondaryLabel) && <div className={styles.actions}>
       {actionLabel && <button className={styles.primary} type="button" onClick={onAction}>{actionLabel}</button>}
       {secondaryLabel && <button className={styles.secondary} type="button" onClick={onSecondary}>{secondaryLabel}</button>}
@@ -35,7 +38,7 @@ export function EmptyState({ title = 'Nothing here yet', message = 'There is no 
 }
 
 export function ApiErrorState({ title = 'We couldn’t load this data', message = 'Something went wrong while contacting the server.', onRetry, retryLabel = 'Try again', compact = false }) {
-  return <StateView title={title} message={message} icon="!" tone="danger" actionLabel={onRetry ? retryLabel : undefined} onAction={onRetry} compact={compact} role="alert"/>;
+  return <StateView title={title} message={message} icon="×" tone="danger" actionLabel={onRetry ? retryLabel : undefined} onAction={onRetry} compact={compact} role="alert"/>;
 }
 
 export function PermissionDeniedState({ title = 'You don’t have access', message = 'Your account does not have permission to view this content.', actionLabel, onAction, compact = false, headingLevel = 'h2' }) {

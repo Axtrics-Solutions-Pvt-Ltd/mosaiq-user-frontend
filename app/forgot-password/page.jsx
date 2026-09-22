@@ -34,8 +34,7 @@ export default function ForgotPassword() {
   }
 
   return <AuthShell title="Turn complex data into a clear next move." eyebrow="Secure account recovery">
-    <Link className={styles.back} href="/login">← Back to sign in</Link>
-    <div className={styles.icon}>↗</div>
+    <Link className={styles.back} href="/login">← Back to sign in</Link>    
     <h1 className={styles.title}>Forgot your password?</h1>
     <p className={styles.subtitle}>Enter your work email and we’ll send password reset instructions.</p>
     <form className={styles.form} onSubmit={submit} noValidate aria-busy={busy}>

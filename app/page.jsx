@@ -1,6 +1,9 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { authApi } from '../lib/api';
+import { validatePassword, userFriendlyFieldErrors } from '../lib/validation';
+import { useAuth } from './AuthProvider';
 const roasIcon1 = '/assets/ig-1.svg';
 const roasIcon2 = '/assets/ig-2.svg';
 const roasIcon3 = '/assets/ig-3.svg';
@@ -972,7 +975,29 @@ function usePersistentState(key, fallback) {
   return [value, setValue];
 }
 
+function initialsFor(name = '', email = '') {
+  const source = String(name || email || 'MOSAIQ user').trim();
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return source.slice(0, 2).toUpperCase() || 'MU';
+}
+
+function roleLabelFor(user) {
+  return user?.membership?.role_code?.replaceAll('_', ' ') || user?.platform_role_code?.replaceAll('_', ' ') || 'MOSAIQ user';
+}
+
+function normalizeWorkspaceOption(workspace) {
+  const id = workspace?.id ?? workspace?.name;
+  const name = workspace?.name || (id != null ? `Workspace ${id}` : 'Workspace');
+  return { id, name, status: workspace?.status || null };
+}
+
+function unwrapProfileResponse(response) {
+  return response?.data || response || null;
+}
+
 function App() {
+  const { user, signOut, refresh } = useAuth();
   const [theme, setTheme] = usePersistentState('mosaiq.theme', 'light');
   const [workspace, setWorkspace] = usePersistentState('mosaiq.workspace', DEFAULT_WORKSPACE);
   const [area, setArea] = usePersistentState('mosaiq.area', 'Reporting');
@@ -983,8 +1008,27 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [authMode, setAuthMode] = useState('sign in');
+  const [workspaceOptions, setWorkspaceOptions] = useState([]);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState('');
+  const [signOutBusy, setSignOutBusy] = useState(false);
+  const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileDetails, setProfileDetails] = useState(null);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSuccess, setProfileSuccess] = useState('');
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
   const profileWrapRef = useRef(null);
+  const availableWorkspaceOptions = workspaceOptions;
+  const workspaceSelectValue = availableWorkspaceOptions.some((option) => option.name === workspace) ? workspace : '';
   const active = WORKSPACES[workspace] || WORKSPACES[DEFAULT_WORKSPACE];
+  const profileName = user?.name || 'MOSAIQ user';
+  const profileRole = roleLabelFor(user);
+  const profileInitials = initialsFor(user?.name, user?.email);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -995,8 +1039,32 @@ function App() {
   }, [page]);
 
   useEffect(() => {
-    if (!WORKSPACES[workspace]) setWorkspace(DEFAULT_WORKSPACE);
-  }, [workspace, setWorkspace]);
+    if (!user) return undefined;
+    let live = true;
+    setWorkspaceLoading(true);
+    setWorkspaceError('');
+    authApi.listWorkspacesForUser(user)
+      .then((response) => {
+        if (!live) return;
+        setWorkspaceOptions((response.data || []).map(normalizeWorkspaceOption));
+      })
+      .catch((error) => {
+        if (!live) return;
+        setWorkspaceOptions([]);
+        setWorkspaceError(error.message || 'Unable to load workspaces.');
+      })
+      .finally(() => {
+        if (live) setWorkspaceLoading(false);
+      });
+    return () => { live = false; };
+  }, [user]);
+
+  useEffect(() => {
+    if (!availableWorkspaceOptions.length) return;
+    if (!availableWorkspaceOptions.some((option) => option.name === workspace)) {
+      setWorkspace(availableWorkspaceOptions[0].name);
+    }
+  }, [availableWorkspaceOptions, workspace, setWorkspace]);
 
   useEffect(() => {
     const validAreas = ['Reporting', 'Marketing Intelligence', 'Media Mix Model'];
@@ -1027,6 +1095,8 @@ function App() {
       if (event.key === 'Escape') {
         setPaletteOpen(false);
         setProfileMenuOpen(false);
+        setProfileSettingsOpen(false);
+        setChangePasswordOpen(false);
       }
     };
 
@@ -1046,6 +1116,116 @@ function App() {
 
   const pageMeta = useMemo(() => PAGES.map((name) => ({ name, q: name.toLowerCase() })), []);
   const filteredPages = pageMeta.filter((item) => item.q.includes(search.toLowerCase()));
+
+  async function handleProfileSettingsOpen() {
+    setProfileMenuOpen(false);
+    setProfileSettingsOpen(true);
+    setProfileLoading(true);
+    setProfileError('');
+    setProfileSuccess('');
+    try {
+      const response = await authApi.me();
+      setProfileDetails(unwrapProfileResponse(response));
+    } catch (error) {
+      setProfileError(error.message || 'Unable to load profile details.');
+      setProfileDetails(user);
+    } finally {
+      setProfileLoading(false);
+    }
+  }
+
+  async function handleProfileSave(name) {
+    const trimmedName = String(name || '').trim();
+    if (!trimmedName) {
+      setProfileError('Please enter your name.');
+      setProfileSuccess('');
+      return;
+    }
+    setProfileSaving(true);
+    setProfileError('');
+    setProfileSuccess('');
+    try {
+      await authApi.updateAgencyUser(user, { name: trimmedName });
+      setProfileDetails({ ...(profileDetails || user), name: trimmedName });
+      setProfileSuccess('Your profile has been updated successfully.');
+    } catch (error) {
+      const nameError = Array.isArray(error.fields?.name) ? error.fields.name[0] : '';
+      const message = error.code === 'PROFILE_RECORD_NOT_FOUND' ? error.message : (nameError || error.message || 'Unable to update profile.');
+      setProfileError(message);
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
+  async function handleProfileSettingsClose() {
+    const shouldRefreshProfile = Boolean(profileSuccess);
+    setProfileSettingsOpen(false);
+    if (shouldRefreshProfile) await refresh();
+  }
+
+  function handleChangePasswordOpen() {
+    setProfileMenuOpen(false);
+    setChangePasswordOpen(true);
+    setPasswordError('');
+    setPasswordSuccess('');
+  }
+
+  function handleChangePasswordClose() {
+    setChangePasswordOpen(false);
+    setPasswordError('');
+    setPasswordSuccess('');
+  }
+
+  async function handleChangePasswordSave(values) {
+    const currentPassword = String(values.current_password || '');
+    const nextPassword = String(values.password || '');
+    const confirmPassword = String(values.password_confirmation || '');
+
+    if (!currentPassword) {
+      setPasswordError('Please enter your current password.');
+      setPasswordSuccess('');
+      return false;
+    }
+    const passwordErrorMessage = validatePassword(nextPassword);
+    if (passwordErrorMessage) {
+      setPasswordError(passwordErrorMessage);
+      setPasswordSuccess('');
+      return false;
+    }
+    if (nextPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match.');
+      setPasswordSuccess('');
+      return false;
+    }
+
+    setPasswordSaving(true);
+    setPasswordError('');
+    setPasswordSuccess('');
+    try {
+      await authApi.changePassword({
+        current_password: currentPassword,
+        password: nextPassword,
+        password_confirmation: confirmPassword,
+      });
+      setPasswordSuccess('Your password has been changed successfully.');
+      return true;
+    } catch (error) {
+      const fields = userFriendlyFieldErrors(error);
+      setPasswordError(fields.current_password || fields.password || fields.password_confirmation || error.message || 'Unable to change password.');
+      return false;
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
+  async function handleHeaderSignOut() {
+    setSignOutBusy(true);
+    try {
+      await signOut();
+      window.location.assign('/login');
+    } finally {
+      setSignOutBusy(false);
+    }
+  }
 
   if (page === 'Login') {
     return (
@@ -1097,10 +1277,15 @@ function App() {
             </section>
 
             <div className="toolbar">
-              <select className="select compact" value={workspace} onChange={(e) => setWorkspace(e.target.value)}>
-                {Object.keys(WORKSPACES).map((name) => (
-                  <option key={name} value={name}>
-                    {name}
+              <select className="select compact" value={workspaceSelectValue} onChange={(e) => setWorkspace(e.target.value)} aria-label="Select workspace" title={workspaceError || undefined} disabled={workspaceLoading || !availableWorkspaceOptions.length}>
+                {!availableWorkspaceOptions.length && (
+                  <option value="">
+                    {workspaceLoading ? 'Loading workspaces...' : workspaceError ? 'Unable to load workspaces' : 'No workspaces assigned'}
+                  </option>
+                )}
+                {availableWorkspaceOptions.map((option) => (
+                  <option key={option.id ?? option.name} value={option.name}>
+                    {option.name}
                   </option>
                 ))}
               </select>
@@ -1111,18 +1296,21 @@ function App() {
               </select>
               <div className="profile-wrap" ref={profileWrapRef}>
                 <button className="profile-trigger" onClick={() => setProfileMenuOpen((value) => !value)} aria-label="Open profile menu">
-                  <span className="avatar">SB</span>
+                  <span className="avatar">{profileInitials}</span>
                   <span className="profile-meta">
-                    <span className="profile-name">Sarah Brown</span>
-                    <span className="profile-role">Admin</span>
+                    <span className="profile-name">{profileName}</span>
+                    <span className="profile-role">{profileRole}</span>
                   </span>
                   <span className="profile-caret">⌄</span>
                 </button>
                 {profileMenuOpen && (
                   <div className="profile-menu">
-                    <button className="profile-item">Profile settings</button>
+                    <button className="profile-item" onClick={handleProfileSettingsOpen}>Profile settings</button>
+                    <button className="profile-item" onClick={handleChangePasswordOpen}>Change password</button>
                     <button className="profile-item">Notifications</button>
-                    <button className="profile-item">Sign out</button>
+                    <button className="profile-item" onClick={handleHeaderSignOut} disabled={signOutBusy}>
+                      {signOutBusy ? 'Signing out...' : 'Sign out'}
+                    </button>
                   </div>
                 )}
               </div>
@@ -1131,6 +1319,31 @@ function App() {
 
           
         </header>
+
+        {profileSettingsOpen && (
+          <ProfileSettingsModal
+            user={user}
+            profile={profileDetails}
+            workspaces={availableWorkspaceOptions}
+            loading={profileLoading}
+            error={profileError}
+            saving={profileSaving}
+            success={profileSuccess}
+            onRetry={handleProfileSettingsOpen}
+            onSave={handleProfileSave}
+            onClose={handleProfileSettingsClose}
+          />
+        )}
+
+        {changePasswordOpen && (
+          <ChangePasswordModal
+            saving={passwordSaving}
+            error={passwordError}
+            success={passwordSuccess}
+            onSave={handleChangePasswordSave}
+            onClose={handleChangePasswordClose}
+          />
+        )}
 
         {area === 'Reporting' && (
           <>
@@ -2179,6 +2392,139 @@ function MarketingInsightsComparisonPage() {
   );
 }
 
+function ProfileSettingsModal({ user, profile, workspaces, loading, error, saving, success, onRetry, onSave, onClose }) {
+  const account = profile || user || {};
+  const [name, setName] = useState(account.name || '');
+  const workspaceSummary = workspaces.length ? workspaces.map((item) => item.name).join(', ') : 'No active workspaces returned yet.';
+
+  useEffect(() => {
+    setName(account.name || '');
+  }, [account.name]);
+
+  return (
+    <div className="profile-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-settings-title">
+        <div className="profile-modal-header">
+          <div>
+            <div className="profile-modal-eyebrow">Profile settings</div>
+            <h2 id="profile-settings-title">Manage your profile</h2>
+            <p>Update the name shown in MOSAIQ. Your email address is managed by your agency admin.</p>
+          </div>
+          <button className="profile-modal-close" type="button" onClick={onClose} aria-label="Close profile settings">×</button>
+        </div>
+
+        {loading && <div className="profile-inline-state">Refreshing profile details...</div>}
+        {success && (
+          <div className="profile-inline-success" role="status">
+            <span>✓</span>
+            <p>{success}</p>
+          </div>
+        )}
+        {error && (
+          <div className="profile-inline-error" role="alert">
+            <span>×</span>
+            <p>{error}</p>
+            <button type="button" onClick={onRetry}>Retry</button>
+          </div>
+        )}
+
+        <div className="profile-settings-grid compact-profile-grid">
+          <label>
+            <span>Name</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} disabled={loading || saving} maxLength={255} />
+          </label>
+          <label>
+            <span>Email address</span>
+            <input value={account.email || ''} readOnly />
+          </label>
+        </div>
+
+        <div className="profile-workspaces">
+          <span>Assigned workspaces</span>
+          <p>{workspaceSummary}</p>
+        </div>
+
+        <div className="profile-modal-actions">
+          <button className="ghost-btn" type="button" onClick={onClose}>Close</button>
+          <button className="primary-btn" type="button" onClick={() => onSave(name)} disabled={loading || saving || !name.trim()}>{saving ? 'Saving...' : 'Save changes'}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+function ChangePasswordModal({ saving, error, success, onSave, onClose }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirmation, setPasswordConfirmation] = useState('');
+  const passwordError = password ? validatePassword(password) : '';
+  const confirmationError = passwordConfirmation && password !== passwordConfirmation ? 'Passwords do not match.' : '';
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const ok = await onSave({
+      current_password: currentPassword,
+      password,
+      password_confirmation: passwordConfirmation,
+    });
+    if (ok) {
+      setCurrentPassword('');
+      setPassword('');
+      setPasswordConfirmation('');
+    }
+  }
+
+  return (
+    <div className="profile-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="profile-modal" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
+        <div className="profile-modal-header">
+          <div>
+            <div className="profile-modal-eyebrow">Account security</div>
+            <h2 id="change-password-title">Change password</h2>
+            <p>Enter your current password and choose a new secure password.</p>
+          </div>
+          <button className="profile-modal-close" type="button" onClick={onClose} aria-label="Close change password">×</button>
+        </div>
+
+        {success && (
+          <div className="profile-inline-success" role="status">
+            <span>✓</span>
+            <p>{success}</p>
+          </div>
+        )}
+        {error && (
+          <div className="profile-inline-error" role="alert">
+            <span>×</span>
+            <p>{error}</p>
+          </div>
+        )}
+
+        <form className="change-password-form" onSubmit={handleSubmit}>
+          <label>
+            <span>Current password</span>
+            <input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} disabled={saving} autoComplete="current-password" />
+          </label>
+          <label>
+            <span>New password</span>
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} disabled={saving} autoComplete="new-password" />
+            <small className={passwordError ? 'profile-field-error' : 'profile-field-help'}>{passwordError || 'Use 8+ characters with at least one letter and one number.'}</small>
+          </label>
+          <label>
+            <span>Confirm new password</span>
+            <input type="password" value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} disabled={saving} autoComplete="new-password" />
+            {confirmationError ? <small className="profile-field-error">{confirmationError}</small> : null}
+          </label>
+
+          <div className="profile-modal-actions change-password-actions">
+            <button className="ghost-btn" type="button" onClick={onClose}>Close</button>
+            <button className="primary-btn" type="submit" disabled={saving || !currentPassword || !password || !passwordConfirmation || Boolean(passwordError) || Boolean(confirmationError)}>
+              {saving ? 'Changing...' : 'Change password'}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
 function HomePage({ workspace, view, compare, range, setRange }) {
   const [trendMetric, setTrendMetric] = useState('conversions');
   const trendMetricLabel = getTrendMetric(trendMetric).label;
@@ -4633,4 +4979,5 @@ function PermissionGrid() {
 export default function Page() {
   return <App />;
 }
+
 

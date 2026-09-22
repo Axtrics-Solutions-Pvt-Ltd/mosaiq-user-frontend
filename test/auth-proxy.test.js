@@ -9,7 +9,12 @@ import {
 
 test('authentication proxy only permits its explicit endpoint allowlist', () => {
   assert.equal(normalizedProxyPath(['api', 'v1', 'auth', 'login']), 'api/v1/auth/login');
+  assert.equal(normalizedProxyPath(['api', 'v1', 'auth', 'workspaces']), 'api/v1/auth/workspaces');
+  assert.equal(normalizedProxyPath(['api', 'v1', 'auth', 'change-password']), 'api/v1/auth/change-password');
+  assert.equal(normalizedProxyPath(['api', 'v1', 'agencies', '3', 'users']), 'api/v1/agencies/3/users');
+  assert.equal(normalizedProxyPath(['api', 'v1', 'agencies', '3', 'users', '7']), 'api/v1/agencies/3/users/7');
   assert.throws(() => normalizedProxyPath(['api', 'v1', 'users']), /PROXY_PATH_NOT_ALLOWED/);
+  assert.throws(() => normalizedProxyPath(['api', 'v1', 'agencies', '1', 'workspaces']), /PROXY_PATH_NOT_ALLOWED/);
 });
 
 test('only Sanctum cookies are forwarded upstream', () => {

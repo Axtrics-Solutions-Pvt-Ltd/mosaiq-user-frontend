@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   passwordChecks,
+  userFriendlyFieldErrors,
   validateEmail,
   validatePassword,
 } from '../lib/validation.js';
@@ -26,4 +27,15 @@ test('validatePassword enforces setup complexity but permits legacy login passwo
   assert.equal(validatePassword('abcdefgh'), 'Include at least one number.');
   assert.equal(validatePassword('short', { login: true }), '');
   assert.equal(validatePassword('Mosaiq12'), '');
+});
+
+test('userFriendlyFieldErrors normalizes backend password policy messages', () => {
+  const fields = userFriendlyFieldErrors({
+    fields: {
+      password: ['The password field must be at least 12 characters.'],
+      password_confirmation: ['The password field confirmation does not match.'],
+    },
+  });
+  assert.equal(fields.password, 'Password must include at least 8 characters, one letter, and one number.');
+  assert.equal(fields.password_confirmation, 'Passwords do not match.');
 });

@@ -9,7 +9,7 @@ import { ButtonProgress } from './components/states';
 import PasswordField from './PasswordField';
 import styles from './auth.module.css';
 import { authApi } from '../lib/api';
-import { firstFieldErrors, passwordChecks, validatePassword } from '../lib/validation';
+import { passwordChecks, userFriendlyFieldErrors, validatePassword } from '../lib/validation';
 
 function expiryLabel(value) {
   if (!value) return 'Not provided';
@@ -78,7 +78,7 @@ export default function InvitationPage({ token }) {
       }
     } catch (requestError) {
       setError(requestError.message);
-      setFields(firstFieldErrors(requestError));
+      setFields(userFriendlyFieldErrors(requestError));
     } finally {
       setBusy(false);
     }

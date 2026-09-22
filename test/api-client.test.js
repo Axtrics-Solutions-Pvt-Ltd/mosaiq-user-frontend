@@ -95,3 +95,76 @@ test('rejecting an invitation is frontend-only until Laravel exposes a public re
   assert.equal(await api.rejectInvitation({ token: 'invitation-token' }), null);
   assert.equal(queue.calls.length, 0);
 });
+
+test('workspace list uses the current-user workspaces endpoint', async () => {
+  const queue = queuedFetch([response({ data: [
+    { id: 1, name: 'Apex Auto' },
+    { id: 2, name: 'Greenline Bank' },
+  ] })]);
+  const api = createAuthApi({ ...options, fetchImpl: queue.fetchImpl });
+  const result = await api.listWorkspacesForUser({
+    membership: { agency_id: 10, client_id: 20, workspace_ids: [2] },
+  });
+
+  assert.equal(queue.calls[0].url, 'https://api.mosaiq.test/api/v1/auth/workspaces?per_page=100&status=active');
+  assert.deepEqual(result.data, [
+    { id: 1, name: 'Apex Auto' },
+    { id: 2, name: 'Greenline Bank' },
+  ]);
+});
+
+test('profile update uses updateAgencyUser with the current user agency and id', async () => {
+  const queue = queuedFetch([
+    response(null, { status: 204 }),
+    response({ data: { id: 7, name: 'Updated User' } }),
+  ]);
+  const api = createAuthApi({ ...options, fetchImpl: queue.fetchImpl, readCookie: () => 'token' });
+  const result = await api.updateAgencyUser({ id: 7, membership: { agency_id: 3 } }, { name: 'Updated User' });
+
+  assert.equal(queue.calls[0].url, 'https://api.mosaiq.test/sanctum/csrf-cookie');
+  assert.equal(queue.calls[1].url, 'https://api.mosaiq.test/api/v1/agencies/3/users/7');
+  assert.equal(queue.calls[1].options.method, 'PUT');
+  assert.deepEqual(JSON.parse(queue.calls[1].options.body), { name: 'Updated User' });
+  assert.equal(result.data.name, 'Updated User');
+});
+
+test('profile update falls back to agency user lookup when current user id is not the agency user id', async () => {
+  const queue = queuedFetch([
+    response(null, { status: 204 }),
+    response({ message: 'Resource not found.' }, { status: 404 }),
+    response({ data: [{ id: 42, email: 'user@mosaiq.test', name: 'Old User' }] }),
+    response(null, { status: 204 }),
+    response({ data: { id: 42, name: 'Updated User' } }),
+  ]);
+  const api = createAuthApi({ ...options, fetchImpl: queue.fetchImpl, readCookie: () => 'token' });
+  const result = await api.updateAgencyUser({ id: 7, email: 'user@mosaiq.test', membership: { agency_id: 3 } }, { name: 'Updated User' });
+
+  assert.equal(queue.calls[1].url, 'https://api.mosaiq.test/api/v1/agencies/3/users/7');
+  assert.equal(queue.calls[2].url, 'https://api.mosaiq.test/api/v1/agencies/3/users?search=user%40mosaiq.test&per_page=100');
+  assert.equal(queue.calls[3].url, 'https://api.mosaiq.test/sanctum/csrf-cookie');
+  assert.equal(queue.calls[4].url, 'https://api.mosaiq.test/api/v1/agencies/3/users/42');
+  assert.equal(result.data.name, 'Updated User');
+});
+
+test('change password posts the current and confirmed new password', async () => {
+  const queue = queuedFetch([
+    response(null, { status: 204 }),
+    response(null, { status: 204 }),
+  ]);
+  const api = createAuthApi({ ...options, fetchImpl: queue.fetchImpl, readCookie: () => 'token' });
+  const result = await api.changePassword({
+    current_password: 'OldPassword123',
+    password: 'NewPassword123',
+    password_confirmation: 'NewPassword123',
+  });
+
+  assert.equal(result, null);
+  assert.equal(queue.calls[0].url, 'https://api.mosaiq.test/sanctum/csrf-cookie');
+  assert.equal(queue.calls[1].url, 'https://api.mosaiq.test/api/v1/auth/change-password');
+  assert.equal(queue.calls[1].options.method, 'POST');
+  assert.deepEqual(JSON.parse(queue.calls[1].options.body), {
+    current_password: 'OldPassword123',
+    password: 'NewPassword123',
+    password_confirmation: 'NewPassword123',
+  });
+});
