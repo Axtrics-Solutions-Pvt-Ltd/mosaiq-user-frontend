@@ -14,6 +14,7 @@ test('development mock mode uses explicit URLs and normalizes trailing slashes',
     appEnvironment: 'development',
     useMockApi: true,
     useLocalApiProxy: false,
+    useApiProxy: false,
     apiUrl: 'http://localhost:8000/api/v1',
     laravelUrl: 'http://localhost:8000',
   });
@@ -29,13 +30,19 @@ test('local proxy mode gives the browser same-origin Laravel URLs', () => {
   assert.equal(environment.apiUrl, '/api/laravel/api/v1');
   assert.equal(environment.laravelUrl, '/api/laravel');
   assert.equal(environment.useLocalApiProxy, true);
+  assert.equal(environment.useApiProxy, true);
 });
 
-test('local proxy mode is rejected outside development and test', () => {
-  assert.throws(() => createPublicEnvironment({
+test('proxy mode is supported in production to avoid browser CORS', () => {
+  const environment = createPublicEnvironment({
     NEXT_PUBLIC_APP_ENV: 'production',
-    NEXT_PUBLIC_USE_LOCAL_API_PROXY: 'true',
-  }), /only supported in development/);
+    NEXT_PUBLIC_USE_MOCK_API: 'false',
+    NEXT_PUBLIC_USE_API_PROXY: 'true',
+    NEXT_PUBLIC_API_URL: 'https://mosaiq.axtrics.com/api/v1',
+  });
+  assert.equal(environment.apiUrl, '/api/laravel/api/v1');
+  assert.equal(environment.laravelUrl, '/api/laravel');
+  assert.equal(environment.useApiProxy, true);
 });
 
 test('Laravel origin is inferred from a conventional versioned API URL', () => {
