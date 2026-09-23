@@ -4,6 +4,7 @@ import {
   forwardedCookies,
   localDevelopmentCookie,
   normalizedProxyPath,
+  rewriteCookieForProxy,
   splitSetCookieHeader,
 } from '../lib/auth-proxy.js';
 
@@ -28,6 +29,13 @@ test('upstream cookies are made usable by localhost HTTP development', () => {
   assert.equal(
     localDevelopmentCookie('XSRF-TOKEN=abc; Path=/; Domain=mosaiq.axtrics.com; Secure; SameSite=Lax'),
     'XSRF-TOKEN=abc; Path=/; SameSite=Lax',
+  );
+});
+
+test('production proxy cookies keep Secure but remove upstream domain', () => {
+  assert.equal(
+    rewriteCookieForProxy('mosaiq-session=abc; Path=/; Domain=mosaiq.axtrics.com; Secure; HttpOnly; SameSite=Lax', { secure: true }),
+    'mosaiq-session=abc; Path=/; Secure; HttpOnly; SameSite=Lax',
   );
 });
 

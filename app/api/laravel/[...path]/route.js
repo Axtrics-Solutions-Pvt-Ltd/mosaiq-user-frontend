@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 const UPSTREAM = (process.env.LARAVEL_UPSTREAM_URL || 'https://mosaiq.axtrics.com').replace(/\/$/, '');
 const SESSION_COOKIE = process.env.LARAVEL_SESSION_COOKIE_NAME || 'mosaiq-session';
-const STATEFUL_ORIGIN = (process.env.LARAVEL_STATEFUL_ORIGIN || 'http://localhost:3000').replace(/\/$/, '');
+const FALLBACK_STATEFUL_ORIGIN = process.env.LARAVEL_STATEFUL_ORIGIN || '';
 
 async function proxy(request, { params }) {
   let path;
@@ -18,11 +18,12 @@ async function proxy(request, { params }) {
 
   const requestUrl = new URL(request.url);
   const upstreamUrl = `${UPSTREAM}/${path}${requestUrl.search}`;
+  const statefulOrigin = (FALLBACK_STATEFUL_ORIGIN || requestUrl.origin).replace(/\/$/, '');
   const headers = new Headers({
     Accept: request.headers.get('accept') || 'application/json',
     'X-Requested-With': 'XMLHttpRequest',
-    Origin: STATEFUL_ORIGIN,
-    Referer: `${STATEFUL_ORIGIN}/`,
+    Origin: statefulOrigin,
+    Referer: `${statefulOrigin}/`,
   });
   const contentType = request.headers.get('content-type');
   const csrfToken = request.headers.get('x-xsrf-token');
@@ -49,7 +50,7 @@ async function proxy(request, { params }) {
     const value = upstreamResponse.headers.get(name);
     if (value) responseHeaders.set(name, value);
   }
-  for (const cookie of upstreamSetCookies(upstreamResponse.headers)) responseHeaders.append('Set-Cookie', cookie);
+  for (const cookie of upstreamSetCookies(upstreamResponse.headers, { secure: requestUrl.protocol === 'https:' })) responseHeaders.append('Set-Cookie', cookie);
 
   return new NextResponse(upstreamResponse.body, {
     status: upstreamResponse.status,
@@ -62,3 +63,4 @@ export const POST = proxy;
 export const PUT = proxy;
 export const PATCH = proxy;
 export const DELETE = proxy;
+
