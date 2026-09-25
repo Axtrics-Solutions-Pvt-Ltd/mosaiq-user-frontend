@@ -1,17 +1,28 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { authApi } from '../lib/api';
 import { assertCurrentUser, unwrapData } from '../lib/contracts';
+import { isPublicPortalRoute } from '../lib/auth-routing';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  const pathname = usePathname();
+  const isPublicPortal = isPublicPortalRoute(pathname);
   const [status, setStatus] = useState('loading');
   const [user, setUser] = useState(null);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
+    if (isPublicPortal) {
+      setUser(null);
+      setError(null);
+      setStatus('unauthenticated');
+      return null;
+    }
+
     setStatus('loading');
     setError(null);
     try {
@@ -30,7 +41,7 @@ export function AuthProvider({ children }) {
       setStatus('error');
       return null;
     }
-  }, []);
+  }, [isPublicPortal]);
 
   useEffect(() => { refresh(); }, [refresh]);
 

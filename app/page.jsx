@@ -956,21 +956,23 @@ const NAV = [
 ];
 
 function usePersistentState(key, fallback) {
-  const [value, setValue] = useState(() => {
-    if (typeof window === 'undefined') return fallback;
-    try {
-      const raw = window.localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch {
-      return fallback;
-    }
-  });
+  const [value, setValue] = useState(fallback);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) setValue(JSON.parse(raw));
+    } catch {}
+    setHydrated(true);
+  }, [key]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
       window.localStorage.setItem(key, JSON.stringify(value));
     } catch {}
-  }, [key, value]);
+  }, [hydrated, key, value]);
 
   return [value, setValue];
 }
@@ -995,6 +997,7 @@ function normalizeWorkspaceOption(workspace) {
 function unwrapProfileResponse(response) {
   return response?.data || response || null;
 }
+
 
 function App() {
   const { user, signOut, refresh } = useAuth();
@@ -1024,8 +1027,10 @@ function App() {
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const profileWrapRef = useRef(null);
   const availableWorkspaceOptions = workspaceOptions;
-  const workspaceSelectValue = availableWorkspaceOptions.some((option) => option.name === workspace) ? workspace : '';
-  const active = WORKSPACES[workspace] || WORKSPACES[DEFAULT_WORKSPACE];
+  const selectedWorkspaceOption = availableWorkspaceOptions.find((option) => option.name === workspace) || null;
+  const workspaceSelectValue = selectedWorkspaceOption ? workspace : '';
+  const seededWorkspace = WORKSPACES[workspace] || WORKSPACES[DEFAULT_WORKSPACE];
+  const active = selectedWorkspaceOption ? { ...seededWorkspace, ...selectedWorkspaceOption } : seededWorkspace;
   const profileName = user?.name || 'MOSAIQ user';
   const profileRole = roleLabelFor(user);
   const profileInitials = initialsFor(user?.name, user?.email);
@@ -1277,47 +1282,13 @@ function App() {
             </section>
 
             <div className="toolbar">
-              <select className="select compact" value={workspaceSelectValue} onChange={(e) => setWorkspace(e.target.value)} aria-label="Select workspace" title={workspaceError || undefined} disabled={workspaceLoading || !availableWorkspaceOptions.length}>
-                {!availableWorkspaceOptions.length && (
-                  <option value="">
-                    {workspaceLoading ? 'Loading workspaces...' : workspaceError ? 'Unable to load workspaces' : 'No workspaces assigned'}
-                  </option>
-                )}
-                {availableWorkspaceOptions.map((option) => (
-                  <option key={option.id ?? option.name} value={option.name}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-              <select className="select compact" value={range} onChange={(e) => setRange(e.target.value)}>
+              <select className="select compact" value={range} onChange={(e) => setRange(e.target.value)} aria-label="Select date range">
                 <option>Last 30 days</option>
                 <option>Last 90 days</option>
                 <option>This quarter</option>
               </select>
-              <div className="profile-wrap" ref={profileWrapRef}>
-                <button className="profile-trigger" onClick={() => setProfileMenuOpen((value) => !value)} aria-label="Open profile menu">
-                  <span className="avatar">{profileInitials}</span>
-                  <span className="profile-meta">
-                    <span className="profile-name">{profileName}</span>
-                    <span className="profile-role">{profileRole}</span>
-                  </span>
-                  <span className="profile-caret">⌄</span>
-                </button>
-                {profileMenuOpen && (
-                  <div className="profile-menu">
-                    <button className="profile-item" onClick={handleProfileSettingsOpen}>Profile settings</button>
-                    <button className="profile-item" onClick={handleChangePasswordOpen}>Change password</button>
-                    <button className="profile-item">Notifications</button>
-                    <button className="profile-item" onClick={handleHeaderSignOut} disabled={signOutBusy}>
-                      {signOutBusy ? 'Signing out...' : 'Sign out'}
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
-
-          
         </header>
 
         {profileSettingsOpen && (
@@ -2528,23 +2499,42 @@ function ChangePasswordModal({ saving, error, success, onSave, onClose }) {
 function HomePage({ workspace, view, compare, range, setRange }) {
   const [trendMetric, setTrendMetric] = useState('conversions');
   const trendMetricLabel = getTrendMetric(trendMetric).label;
+  const effectiveView = view;
+  const aiSummary = null;  const whatWorkedItems = aiSummary?.what_worked?.length ? aiSummary.what_worked : [
+    'Meta Ads video creative for Lunar New Year drove a 2.34% CTR, well above the 1.9% portfolio average, and delivered the lowest CPA of any campaign this month.',
+    'Streaming pre-roll for the Latin Heritage campaign produced the highest conversion volume (2,011) at a strong cost efficiency.',
+    'Bilingual (Spanish/English) ad copy variants outperformed English-only versions by 18% on CTR across Meta placements.',
+    'Programmatic day-parting around evening streaming hours improved viewability for South Asian audience segments.'
+  ];
+  const didNotWorkItems = aiSummary?.what_did_not_work?.length ? aiSummary.what_did_not_work : [
+    'Community Feature (YouTube) underdelivered — CTR of 1.44% and the highest CPA in the portfolio, driven by weak placement targeting.',
+    'Ramadan Community Series generated strong reach (8.9M impressions) but a disproportionately low conversion count (476), suggesting a landing page or offer mismatch.',
+    'Static creative formats consistently trailed video and carousel formats on engagement across all channels.',
+    'Digital direct and audio spend pacing was inconsistent, with two placements running under-delivered for over a week.'
+  ];
+  const recommendationItems = aiSummary?.recommendations?.length
+    ? aiSummary.recommendations.map((item, index) => [String(index + 1), item, 'Recommended for this report setup.', 'AI SUMMARY'])
+    : [
+      ['1', 'Reallocate 15% of digital direct budget into Meta Ads', 'Shift underperforming channel spend toward the channel with proven efficiency to lift blended ROAS within 30 days.', 'MEDIA BUYING TEAM'],
+      ['2', 'Launch the Chinese New Year creative refresh', 'Build a fresh seasonal concept and test new messaging before the next cultural moment flight goes live.', 'ANALYTICS + CREATIVE'],
+      ['3', 'Expand bilingual and video creative testing', 'Scale the bilingual ad copy approach and video formats that outperformed to the remaining live campaigns.', 'CREATIVE TEAM'],
+      ['4', 'Renegotiate or replace underdelivering digital audio placements', 'Address pacing inconsistencies with the current partner or shift remaining flight to a better-performing channel mix.', 'ACCOUNT DIRECTOR'],
+      ['5', 'Tighten targeting for the follow-up community campaign', 'Apply learnings on placement quality before the next cultural moment flight goes live.', 'MEDIA BUYING TEAM']
+    ];
 
   return (
     <>
       <section className="hero-card executive-hero">
         <div className="hero-copy">
           <div className="hero-kicker">AI Summary</div>
-          <div className="hero-title">{view.summary || workspace.summary}</div>
-          <p>
-            The data below is seeded mock data that changes by workspace and filters so the client can review
-            behavior, not just static artwork.
-          </p>
+          <div className="hero-title">{effectiveView.summary || workspace.summary}</div>
+          <p>The data below is prepared from the current report setup and will be connected to public report APIs in the next phase.</p>
         </div>
         <div className="hero-visual">
           <HeroIllustration />
         </div>
         <div className="hero-stat">
-          <div className="hero-value">{view.overview?.roas || workspace.overview.roas}</div>
+          <div className="hero-value">{effectiveView.overview?.roas || workspace.overview.roas}</div>
           <div className="hero-caption">BLENDED ROAS</div>
           <div className="hero-trend">↗ +28% vs prev 30 days</div>
         </div>
@@ -2558,7 +2548,7 @@ function HomePage({ workspace, view, compare, range, setRange }) {
           metric={trendMetric}
           setMetric={setTrendMetric}
         >
-          <TrendChart accent={workspace.accent} compare={compare} range={range} metric={trendMetric} />
+          <TrendChart accent={workspace.accent} compare={compare} range={range} metric={trendMetric} series={effectiveView.performanceSeries} />
         </ChartPanel>
         <ChartPanel title="ROAS by Channel" range={range} setRange={setRange}>
           <DonutChart data={workspace.channels} range={range} />
@@ -2569,34 +2559,18 @@ function HomePage({ workspace, view, compare, range, setRange }) {
           tone="good"
           icon="✓"
           title="AI Insights - What worked"
-          items={[
-            'Meta Ads video creative for Lunar New Year drove a 2.34% CTR, well above the 1.9% portfolio average, and delivered the lowest CPA of any campaign this month.',
-            'Streaming pre-roll for the Latin Heritage campaign produced the highest conversion volume (2,011) at a strong cost efficiency.',
-            'Bilingual (Spanish/English) ad copy variants outperformed English-only versions by 18% on CTR across Meta placements.',
-            'Programmatic day-parting around evening streaming hours improved viewability for South Asian audience segments.'
-          ]}
+          items={whatWorkedItems}
         />
         <SummaryCard
           tone="bad"
           icon="⚠"
           title="AI Analysis - What didn't work"
-          items={[
-            'Community Feature (YouTube) underdelivered — CTR of 1.44% and the highest CPA in the portfolio, driven by weak placement targeting.',
-            'Ramadan Community Series generated strong reach (8.9M impressions) but a disproportionately low conversion count (476), suggesting a landing page or offer mismatch.',
-            'Static creative formats consistently trailed video and carousel formats on engagement across all channels.',
-            'Digital direct and audio spend pacing was inconsistent, with two placements running under-delivered for over a week.'
-          ]}
+          items={didNotWorkItems}
         />
       </div>
       <SummaryActionCard
         title="AI Recommendations - How to improve ROAS"
-        items={[
-          ['1', 'Reallocate 15% of digital direct budget into Meta Ads', 'Shift underperforming channel spend toward the channel with proven efficiency to lift blended ROAS within 30 days.', 'MEDIA BUYING TEAM'],
-          ['2', 'Launch the Chinese New Year creative refresh', 'Build a fresh seasonal concept and test new messaging before the next cultural moment flight goes live.', 'ANALYTICS + CREATIVE'],
-          ['3', 'Expand bilingual and video creative testing', 'Scale the bilingual ad copy approach and video formats that outperformed to the remaining live campaigns.', 'CREATIVE TEAM'],
-          ['4', 'Renegotiate or replace underdelivering digital audio placements', 'Address pacing inconsistencies with the current partner or shift remaining flight to a better-performing channel mix.', 'ACCOUNT DIRECTOR'],
-          ['5', 'Tighten targeting for the follow-up community campaign', 'Apply learnings on placement quality before the next cultural moment flight goes live.', 'MEDIA BUYING TEAM']
-        ]}
+        items={recommendationItems}
       />
     </>
   );
@@ -4732,7 +4706,7 @@ function DonutChart({ data }) {
   );
 }
 
-function TrendChart({ compare, accent, range, metric = 'conversions' }) {
+function TrendChart({ compare, accent, range, metric = 'conversions', series = null }) {
   const wrapRef = useRef(null);
   const [hovered, setHovered] = useState(null);
   const w = 760;
@@ -4763,7 +4737,8 @@ function TrendChart({ compare, accent, range, metric = 'conversions' }) {
     }
   };
   const trendMetric = getTrendMetric(metric);
-  const { spend, conversions, impressions, clicks } = seriesByRange[range] || seriesByRange['Last 30 days'];
+  const fallbackSeries = seriesByRange[range] || seriesByRange['Last 30 days'];
+  const { spend, conversions, impressions, clicks } = series || fallbackSeries;
   const metricSeriesByKey = {
     conversions,
     impressions,
@@ -4780,8 +4755,8 @@ function TrendChart({ compare, accent, range, metric = 'conversions' }) {
     impressions: [0, 2, 4, 6, 8],
     clicks: [0, 100, 200, 300, 400, 500]
   };
-  const spendMax = 40;
-  const rightMax = rightAxisMaxByMetric[trendMetric.value] || 1500;
+  const spendMax = Math.max(40, ...spend.map((value) => Number(value) || 0));
+  const rightMax = Math.max(rightAxisMaxByMetric[trendMetric.value] || 1500, ...rightSeries.map((value) => Number(value) || 0));
   const chartW = w - padL - padR;
   const chartH = h - padT - padB;
   const x = (i) => padL + (i / (xvals.length - 1)) * chartW;
@@ -4976,8 +4951,10 @@ function PermissionGrid() {
   );
 }
 
-export default function Page() {
+export function DashboardPage() {
   return <App />;
 }
 
-
+export default function Page() {
+  return <DashboardPage />;
+}

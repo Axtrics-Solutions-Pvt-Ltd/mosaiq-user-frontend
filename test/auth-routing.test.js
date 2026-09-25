@@ -9,8 +9,8 @@ const activeUser = {
   membership: { agency_id: 1, role_code: 'CLIENT_USER', client_id: 1, workspace_ids: [1] },
 };
 
-test('public authentication and invitation routes never redirect', () => {
-  for (const pathname of ['/login', '/forgot-password', '/reset-password', '/invite-invalid', '/access-denied', '/accept-invitation', '/invite/demo-token']) {
+test('public authentication, invitation, and portal routes never redirect', () => {
+  for (const pathname of ['/', '/login', '/forgot-password', '/reset-password', '/invite-invalid', '/access-denied', '/accept-invitation', '/invite/demo-token', '/userPortal/retisoft-q3']) {
     assert.equal(isPublicAuthRoute(pathname), true);
     assert.equal(protectedRouteRedirect({ pathname, status: 'unauthenticated', user: null }), null);
   }
@@ -25,8 +25,8 @@ test('unauthenticated protected routes preserve path and query in next', () => {
 });
 
 test('authenticated users without active membership are denied', () => {
-  assert.equal(protectedRouteRedirect({ pathname: '/', status: 'authenticated', user: { id: 2, platform_role_code: null, membership: null } }), '/access-denied');
-  assert.equal(protectedRouteRedirect({ pathname: '/', status: 'authenticated', user: activeUser }), null);
+  assert.equal(protectedRouteRedirect({ pathname: '/reporting', status: 'authenticated', user: { id: 2, platform_role_code: null, membership: null } }), '/access-denied');
+  assert.equal(protectedRouteRedirect({ pathname: '/reporting', status: 'authenticated', user: activeUser }), null);
 });
 
 test('loading and recoverable session errors do not trigger redirects', () => {
