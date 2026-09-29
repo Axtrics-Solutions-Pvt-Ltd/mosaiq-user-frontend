@@ -78,8 +78,13 @@ function firstTab(sections = []) {
 }
 
 function defaultRange(metadata) {
-  const range = metadata?.date_range?.default;
-  return { from: range?.from || '', to: range?.to || '', preset: range?.preset || 'custom' };
+  const range = metadata?.date_range?.default || {};
+  const available = metadata?.date_range?.available || {};
+  return {
+    from: clampDate(range.from || available.from || '', available.from, available.to),
+    to: clampDate(range.to || available.to || '', available.from, available.to),
+    preset: range.preset || 'custom',
+  };
 }
 
 function parseDate(value) {
@@ -976,6 +981,7 @@ export default function PublicReportPortal({ token }) {
     </main>
   );
 }
+
 
 
 
