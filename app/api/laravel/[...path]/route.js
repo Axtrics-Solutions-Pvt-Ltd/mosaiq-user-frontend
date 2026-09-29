@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { forwardedCookies, normalizedProxyPath, upstreamSetCookies } from '../../../../lib/auth-proxy.js';
+import { forwardedAuthorization, forwardedCookies, normalizedProxyPath, upstreamSetCookies } from '../../../../lib/auth-proxy.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,9 +27,11 @@ async function proxy(request, { params }) {
   });
   const contentType = request.headers.get('content-type');
   const csrfToken = request.headers.get('x-xsrf-token');
+  const authorization = forwardedAuthorization(request.headers.get('authorization') || '', path);
   const cookies = forwardedCookies(request.headers.get('cookie') || '', SESSION_COOKIE);
   if (contentType) headers.set('Content-Type', contentType);
   if (csrfToken) headers.set('X-XSRF-TOKEN', csrfToken);
+  if (authorization) headers.set('Authorization', authorization);
   if (cookies) headers.set('Cookie', cookies);
 
   let upstreamResponse;
