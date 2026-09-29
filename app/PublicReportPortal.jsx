@@ -48,9 +48,10 @@ function storeToken(token, accessToken) {
 
 function formatValue(value, format = 'number', currency = 'CAD') {
   if (value === null || value === undefined || value === '') return '-';
-  if (format === 'text') return String(value);
-  const number = Number(value);
-  if (!Number.isFinite(number)) return String(value);
+  const safeValue = displayText(value);
+  if (format === 'text') return String(safeValue);
+  const number = Number(safeValue);
+  if (!Number.isFinite(number)) return String(safeValue);
   if (format === 'currency') {
     const compact = new Intl.NumberFormat('en-CA', { notation: 'compact', maximumFractionDigits: 1 }).format(number);
     const symbol = currency === 'CAD' || currency === 'USD' ? '$' : `${currency} `;
@@ -59,6 +60,19 @@ function formatValue(value, format = 'number', currency = 'CAD') {
   if (format === 'percent') return `${new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(number)}%`;
   if (format === 'multiplier') return `${new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(number)}x`;
   return new Intl.NumberFormat('en-CA', { notation: Math.abs(number) >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(number);
+}
+
+function formatCompactPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '-';
+  if (Math.abs(number) < 10000) return formatValue(number, 'percent');
+  return `${new Intl.NumberFormat('en-CA', { notation: 'compact', maximumFractionDigits: 2 }).format(number)}%`;
+}
+
+function displayText(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return value.label ?? value.value ?? value.name ?? value.title ?? value.key ?? '';
+  return value;
 }
 
 function errorMessage(error) {
@@ -229,6 +243,8 @@ function TabIcon({ name }) {
       return <svg {...common}><path d="M4 7h16v10H4z" /><path d="M7 14l3-3 3 2 3-4 2 3" /></svg>;
     case 'reports':
       return <svg {...common}><path d="M6 4h9l3 3v13H6z" /><path d="M9 11h6" /><path d="M9 15h6" /></svg>;
+    case 'globe':
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3c3 3.2 3 14.8 0 18" /><path d="M12 3c-3 3.2-3 14.8 0 18" /></svg>;
     case 'audience-research':
       return <svg {...common}><circle cx="12" cy="12" r="6" /><path d="M12 6v3" /><path d="M18 12h-3" /><path d="M12 18v-3" /><path d="M6 12h3" /></svg>;
     case 'opportunity':
@@ -273,6 +289,22 @@ function isActiveCampaigns(widget) {
   return widget?.type === 'data_table' && (widget?.code === 'active_campaigns' || `${widget?.title || ''}`.toLowerCase().includes('active campaigns'));
 }
 
+function isChannelRoas(widget) {
+  return widget?.type === 'channel_list' && (widget?.code === 'channel_roas' || `${widget?.title || ''}`.toLowerCase().includes('channel roas'));
+}
+
+function isBudgetUtilization(widget) {
+  return widget?.type === 'gauge' && (widget?.code === 'budget_utilization' || `${widget?.title || ''}`.toLowerCase().includes('budget utilization'));
+}
+
+function isChannelInsight(widget) {
+  return widget?.code === 'channel_insights';
+}
+
+function isChannelRecommendation(widget) {
+  return widget?.code === 'channel_recommendations';
+}
+
 function iconForTab(tab) {
   return tab.icon || TAB_ICON_MAP[tab.code] || 'summary';
 }
@@ -292,12 +324,20 @@ function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRan
           </div>
         </div>
         <nav className={styles.sections} aria-label="Report sections">
-          {sections.map((section) => (
-            <button key={section.code} type="button" className={section.code === activeSection ? styles.active : ''} onClick={() => onSelectTab(section.code, section.tabs?.[0]?.code)}>
-              <span className={styles.tabIcon}><TabIcon name={TAB_ICON_MAP[section.code] || 'reporting'} /></span>
-              {section.name}
-            </button>
-          ))}
+          {sections.map((section) => {
+            const sectionAccent = section.accent || {};
+            const sectionStyle = section.accent ? {
+              '--section-base': sectionAccent.base,
+              '--section-strong': sectionAccent.strong,
+              '--section-soft': sectionAccent.soft,
+            } : undefined;
+            return (
+              <button key={section.code} type="button" style={sectionStyle} className={section.code === activeSection ? styles.active : ''} onClick={() => onSelectTab(section.code, section.tabs?.[0]?.code)}>
+                <span className={styles.tabIcon}><TabIcon name={TAB_ICON_MAP[section.code] || 'reporting'} /></span>
+                {section.name}
+              </button>
+            );
+          })}
         </nav>
         <div className={styles.headerActions}>
           {dateOptions.length ? <select className={styles.headerSelect} value={range.preset} onChange={(event) => applyRangePreset(metadata, setRange, event.target.value)} aria-label="Select date range">
@@ -305,7 +345,7 @@ function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRan
           </select> : null}
         </div>
       </div>
-      {active?.tabs?.length ? <nav className={styles.tabs} aria-label={`${active.name} tabs`}>
+      {active?.tabs?.length ? <nav className={styles.tabs} style={active.accent ? { '--section-strong': active.accent.strong, '--section-soft': active.accent.soft } : undefined} aria-label={`${active.name} tabs`}>
         {active.tabs.map((tab) => (
           <button key={tab.code} type="button" className={tab.code === activeTab ? styles.active : ''} onClick={() => onSelectTab(active.code, tab.code)}>
             <span className={styles.tabIcon}><TabIcon name={iconForTab(tab)} /></span>
@@ -333,8 +373,8 @@ function Filters({ metadata, range, setRange, activeSection }) {
 }
 
 function WidgetFrame({ widget, children }) {
-  const span = widget.span === 2 || widget.type === 'recommendation_list' || isDetailedKpiGroup(widget) || isActiveCampaigns(widget) ? styles.span2 : styles.span1;
-  const bodyOwnsHeader = widget.type === 'line_chart' || isRoasDonut(widget) || isDetailedKpiGroup(widget) || isDetailedMetricTable(widget) || isActiveCampaigns(widget);
+  const span = widget.span === 2 || widget.type === 'recommendation_list' || widget.type === 'creative_grid' || isDetailedKpiGroup(widget) || isActiveCampaigns(widget) ? styles.span2 : styles.span1;
+  const bodyOwnsHeader = widget.type === 'line_chart' || widget.type === 'creative_grid' || widget.type === 'progress_list' || isRoasDonut(widget) || isDetailedKpiGroup(widget) || isDetailedMetricTable(widget) || isActiveCampaigns(widget) || isChannelRoas(widget) || isBudgetUtilization(widget);
   const tone = insightTone(widget);
   return (
     <article className={`${styles.widget} ${span} ${tone ? styles.insightWidget : ''}`}>
@@ -425,7 +465,7 @@ function Sparkline({ points = [], tone }) {
   }, '');
   return <svg className={styles.kpiSparkline} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
     {path ? <path d={path} className={`${styles.kpiSparkPath} ${styles[`kpiTone_${tone}`]}`} /> : null}
-    {points.map((point, index) => Number.isFinite(Number(point.y)) ? <circle key={point.x || index} cx={xFor(index)} cy={yFor(point.y)} r="2.4" className={`${styles.kpiSparkDot} ${styles[`kpiTone_${tone}`]}`} /> : null)}
+    {points.map((point, index) => Number.isFinite(Number(point.y)) ? <circle key={point.x || index} cx={xFor(index)} cy={yFor(point.y)} r="2.4" className={`${styles.kpiSparkDot} ${styles[`kpiTone_${tone}`]}`}><title>{`${point.x || `Point ${index + 1}`}: ${point.y}`}</title></circle> : null)}
   </svg>;
 }
 
@@ -472,6 +512,69 @@ function BarList({ items = [], currency, maxValue }) {
   })}</div>;
 }
 
+const PROGRESS_COLORS = ['#ff5b6b', '#2fc3c3', '#f7bd31', '#7c4ff4', '#4f83f1', '#ff8a3d'];
+const BADGE_OVERRIDES = { hinglish: 'HN', punjabi: 'PN', mandarin: 'MA', cantonese: 'CN', tagalog: 'TL' };
+
+function isProvinceGroup(key = '') {
+  return String(key || '').toLowerCase().includes('province');
+}
+
+function progressBadge(label = '') {
+  const clean = String(label).trim();
+  const key = clean.toLowerCase();
+  if (BADGE_OVERRIDES[key]) return BADGE_OVERRIDES[key];
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length > 1) return parts.map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  return clean.slice(0, 2).toUpperCase();
+}
+
+function ProgressFooter({ footer = [], currency }) {
+  if (!footer.length) return null;
+  return <div className={styles.progressFooter}>{footer.map((item, index) => {
+    const change = item.change;
+    const labelText = String(item.label || '');
+    const sentiment = change?.sentiment || change?.direction;
+    const inferredComparison = !change && index === footer.length - 1 && item.format === 'percent' && (labelText.toLowerCase().includes('prev') || labelText.toLowerCase().startsWith('vs '));
+    const isNegative = sentiment === 'negative' || sentiment === 'down' || (inferredComparison && Number(item.value) < 0);
+    const isChangeOnly = inferredComparison || (Boolean(change) && (item.value === null || item.value === undefined || item.value === change.value || labelText.toLowerCase().includes('prev') || labelText.toLowerCase().startsWith('vs ')));
+    const changeValue = change ? change.value : item.value;
+    const changeFormat = change ? change.format : item.format;
+    const changeLabel = change?.label || item.label;
+    const changePrefix = isNegative ? '− ' : '+ ';
+    return <div className={isChangeOnly ? styles.progressFooterChange : ''} key={`${item.label}-${index}`}>
+      {index === 0 ? <span className={styles.progressFooterIcon}><TabIcon name="audience" /></span> : null}
+      <strong className={isChangeOnly ? (isNegative ? styles.negative : styles.positive) : ''}>{isChangeOnly ? `${changePrefix}${formatValue(Math.abs(Number(changeValue)), changeFormat, currency)}` : formatValue(item.value, item.format, currency)}</strong>
+      <small>{isChangeOnly ? changeLabel : item.label}</small>
+      {change && !isChangeOnly ? <em className={isNegative ? styles.negative : styles.positive}>{change.value !== null && change.value !== undefined ? `${changePrefix}${formatValue(Math.abs(Number(change.value)), change.format, currency)}` : changePrefix.trim()}{change.label ? <b>{change.label}</b> : null}</em> : null}
+    </div>;
+  })}</div>;
+}
+
+function ProgressListWidget({ widget, currency }) {
+  const groups = widget.groups || [];
+  const [activeGroup, setActiveGroup] = useState(groups[0]?.key || '');
+  const effectiveGroup = groups.find((group) => group.key === activeGroup)?.key || groups[0]?.key || '';
+  const items = (widget.items || []).filter((item) => !groups.length || item.group === effectiveGroup);
+  return <div className={styles.progressListWidget}>
+    <div className={styles.progressHeader}>
+      <div><h2>{widget.title}</h2>{widget.subtitle ? <p>{widget.subtitle}</p> : null}</div>
+      {widget.as_of ? <span>As of {widget.as_of}</span> : null}
+    </div>
+    {groups.length ? <div className={styles.progressGroupToggle}>{groups.map((group) => <button key={group.key} type="button" className={group.key === effectiveGroup ? styles.active : ''} onClick={() => setActiveGroup(group.key)}><span className={styles.tabIcon}><TabIcon name={isProvinceGroup(group.key) ? 'audience' : 'globe'} /></span>{group.label}</button>)}</div> : null}
+    {widget.empty ? <p className={styles.empty}>No data for this period.</p> : <div className={`${styles.progressRows} ${isProvinceGroup(effectiveGroup) ? styles.provinceRows : ''}`}>{items.map((item, index) => {
+      const color = item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length];
+      const width = Math.max(0, Math.min(100, Number(item.share) || 0));
+      return <div className={`${styles.progressRow} ${groups.length ? styles.progressGroupedRow : ''} ${isProvinceGroup(effectiveGroup) ? styles.provinceRow : ''}`} key={`${item.group || 'row'}-${item.label}-${index}`} style={{ '--progress-color': color }}>
+        <span className={styles.progressBadge}>{groups.length ? progressBadge(item.label) : <TabIcon name="audience" />}</span>
+        <div className={styles.progressInfo}><strong>{item.label}</strong><i><em style={{ width: `${width}%` }} /></i></div>
+        <div className={styles.progressValue}><strong>{formatValue(item.value, item.format, currency)}</strong>{groups.length ? null : <small>{item.format === 'percent' ? 'Share of reach' : item.label}</small>}</div>
+        {item.secondary ? <div className={styles.progressSecondary}><strong>{formatValue(item.secondary.value, item.secondary.format, currency)}</strong><small>{item.secondary.label}</small></div> : null}
+      </div>;
+    })}</div>}
+    <ProgressFooter footer={widget.footer || []} currency={currency} />
+  </div>;
+}
+
 function DataTable({ widget, currency }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -507,13 +610,13 @@ function DataTable({ widget, currency }) {
     </div>
     <div className={styles.tableWrap}>
       <table>
-        <thead><tr>{columns.map((column) => <th key={column.key || column}>{column.label || column}</th>)}</tr></thead>
+        <thead><tr>{columns.map((column, index) => <th key={column.key || displayText(column) || index}>{displayText(column.label || column)}</th>)}</tr></thead>
         <tbody>{filtered.map((row, index) => <tr key={row.key || row.id || index}>{columns.map((column) => {
           const key = column.key || String(column).toLowerCase();
           const cell = row[key];
           const value = cell && typeof cell === 'object' && !Array.isArray(cell) ? cell.value : cell;
           const format = cell && typeof cell === 'object' ? (cell.format || column.format) : column.format;
-          return <td key={key}>{cell?.status ? <StatusChip status={cell.status} /> : formatValue(value, format, currency)}</td>;
+          return <td key={key}>{cell?.status ? <StatusChip status={cell.status} /> : formatValue(displayText(value), format, currency)}</td>;
         })}</tr>)}</tbody>
       </table>
     </div>
@@ -521,30 +624,105 @@ function DataTable({ widget, currency }) {
 }
 
 function CreativeGrid({ widget, currency }) {
+  const [search, setSearch] = useState('');
   const [type, setType] = useState('');
   const [platform, setPlatform] = useState('');
   const [status, setStatus] = useState('');
+  const [sortBy, setSortBy] = useState('performance');
+  const [viewMode, setViewMode] = useState('grid');
   const items = widget.items || [];
-  const types = [...new Set(items.map((item) => item.type).filter(Boolean))];
-  const platforms = [...new Set(items.map((item) => item.platform).filter(Boolean))];
-  const statuses = [...new Set(items.map((item) => item.status?.code).filter(Boolean))];
-  const filtered = items.filter((item) => (!type || item.type === type) && (!platform || item.platform === platform) && (!status || item.status?.code === status));
-  return <>
-    <div className={styles.tableTools}>
+  const normalized = (value) => String(value || '').toLowerCase();
+  const titleFor = (item) => item.title || item.name || item.label || 'Untitled creative';
+  const typeFor = (item) => item.type || item.format || item.kind || '';
+  const platformFor = (item) => item.platform || item.channel || '';
+  const statusParts = (item) => {
+    const raw = item.status;
+    if (!raw) {
+      const uploadLike = normalized(titleFor(item)).includes('upload new creative') || item.kind === 'upload' || item.kind === 'system';
+      return uploadLike ? { label: 'Coming soon', code: 'coming_soon' } : { label: 'Active', code: 'active' };
+    }
+    if (typeof raw === 'object') return { label: raw.label || raw.code || raw.value || '', code: raw.code || raw.label || raw.value || '' };
+    return { label: String(raw), code: String(raw) };
+  };
+  const statusFor = (item) => statusParts(item).code || statusParts(item).label;
+  const metricFor = (item, key) => {
+    const metric = item.metrics?.[key] ?? item[key];
+    return metric && typeof metric === 'object' && !Array.isArray(metric) ? metric.value : metric;
+  };
+  const metricFormat = (item, key, fallback) => {
+    const metric = item.metrics?.[key] ?? item[key];
+    return metric && typeof metric === 'object' && !Array.isArray(metric) ? (metric.format || fallback) : fallback;
+  };
+  const types = [...new Set(items.map(typeFor).filter(Boolean))];
+  const platforms = [...new Set(items.map(platformFor).filter(Boolean))];
+  const statuses = [...new Set(items.map(statusFor).filter(Boolean))];
+  const filtered = items
+    .filter((item) => {
+      const haystack = [titleFor(item), item.campaign, item.description, typeFor(item), platformFor(item)].map(normalized).join(' ');
+      return (!search || haystack.includes(normalized(search)))
+        && (!type || typeFor(item) === type)
+        && (!platform || platformFor(item) === platform)
+        && (!status || statusFor(item) === status);
+    })
+    .sort((a, b) => {
+      if (sortBy === 'title') return titleFor(a).localeCompare(titleFor(b));
+      if (sortBy === 'status') return statusFor(a).localeCompare(statusFor(b));
+      if (sortBy === 'conversions') return (Number(metricFor(b, 'conversions')) || 0) - (Number(metricFor(a, 'conversions')) || 0);
+      const bCtr = Number(metricFor(b, 'ctr')) || Number(metricFor(b, 'performance')) || 0;
+      const aCtr = Number(metricFor(a, 'ctr')) || Number(metricFor(a, 'performance')) || 0;
+      return bCtr - aCtr;
+    });
+  const initials = (item) => {
+    const raw = item.badge || titleFor(item).split(/\s+/).map((part) => part[0]).join('').slice(0, 3) || '+';
+    return String(raw).replace(/[^a-z0-9+]/gi, '').slice(0, 3).toUpperCase();
+  };
+  const typeLabel = (item) => typeFor(item) || platformFor(item) || 'Creative';
+  const statusChip = (item) => {
+    const { label, code: rawCode } = statusParts(item);
+    const code = normalized(rawCode || label);
+    if (!label) return null;
+    const isActive = code.includes('active') || code.includes('live');
+    return <span className={`${styles.creativeStatus} ${isActive ? styles.creativeStatusActive : ''}`}><span aria-hidden="true">✓</span>{label}</span>;
+  };
+
+  return <div className={styles.creativeBoard}>
+    <div className={styles.creativeBoardHeader}>
+      <h2>{widget.title || 'Top performing creative'}</h2>
+      {widget.subtitle ? <p>{widget.subtitle}</p> : null}
+    </div>
+    <div className={styles.creativeFilters}>
+      <input placeholder="Filter creatives..." value={search} onChange={(event) => setSearch(event.target.value)} />
       <select value={type} onChange={(event) => setType(event.target.value)}><option value="">All types</option>{types.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select value={platform} onChange={(event) => setPlatform(event.target.value)}><option value="">All platforms</option>{platforms.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((value) => <option key={value} value={value}>{value}</option>)}</select>
-    </div>
-    <div className={styles.creativeGrid}>{filtered.map((item) => <div className={styles.creativeCard} key={item.key || item.title}>
-      {item.thumbnail_url ? <img src={item.thumbnail_url} alt="" /> : <div className={styles.thumbnailFallback}>{item.type || item.format || 'Creative'}</div>}
-      <div>
-        <h3>{item.title}</h3>
-        <p>{item.campaign}</p>
-        <StatusChip status={item.status} />
-        <dl>{Object.entries(item.metrics || {}).map(([key, metric]) => <div key={key}><dt>{key}</dt><dd>{formatValue(metric.value, metric.format, currency)}</dd></div>)}</dl>
+      <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="performance">Performance</option><option value="conversions">Conversions</option><option value="title">Name</option><option value="status">Status</option></select>
+      <div className={styles.creativeViewToggle} aria-label="Creative view">
+        <button type="button" className={viewMode === 'grid' ? styles.active : ''} onClick={() => setViewMode('grid')} aria-label="Grid view">▦</button>
+        <button type="button" className={viewMode === 'list' ? styles.active : ''} onClick={() => setViewMode('list')} aria-label="List view">☰</button>
       </div>
-    </div>)}</div>
-  </>;
+    </div>
+    {filtered.length ? <div className={`${styles.creativeGrid} ${viewMode === 'list' ? styles.creativeListView : ''}`}>{filtered.map((item, index) => {
+      const ctr = metricFor(item, 'ctr') ?? metricFor(item, 'performance');
+      const conversions = metricFor(item, 'conversions');
+      const isUpload = normalized(titleFor(item)).includes('upload new creative') || item.kind === 'upload';
+      return <article className={`${styles.creativeCard} ${isUpload ? styles.creativeUploadCard : ''}`} key={item.key || item.id || titleFor(item)}>
+        {item.thumbnail_url || item.image_url ? <img src={item.thumbnail_url || item.image_url} alt="" /> : <div className={styles.thumbnailFallback}>{isUpload ? '＋' : typeLabel(item)}</div>}
+        <div className={styles.creativeCardBody}>
+          <div className={styles.creativeTitleRow}>
+            <span className={styles.creativeBadge} style={{ '--creative-color': item.color || CHANNEL_COLORS[index % CHANNEL_COLORS.length] }}>{isUpload ? '+' : initials(item)}</span>
+            <div><h3>{titleFor(item)}</h3><p>{typeLabel(item)}</p></div>
+            <button type="button" aria-label="Creative actions">⋮</button>
+          </div>
+          {item.description ? <p className={styles.creativeDescription}>{item.description}</p> : null}
+          <div className={styles.creativeMetrics}>
+            <div><strong>{ctr !== undefined && ctr !== null ? `↑ ${formatValue(ctr, metricFormat(item, 'ctr', 'percent'), currency)}` : '—'}</strong><small>CTR</small></div>
+            <div><strong>{conversions !== undefined && conversions !== null ? formatValue(conversions, metricFormat(item, 'conversions', 'number'), currency) : '—'}</strong><small>Conversions</small></div>
+            <div>{statusChip(item)}</div>
+          </div>
+        </div>
+      </article>;
+    })}</div> : <p className={styles.empty}>No creatives match these filters.</p>}
+  </div>;
 }
 
 const DONUT_COLORS = ['#4f83f1', '#9b7cf3', '#f8cb5d', '#ff8a3d', '#2fc3c3', '#5a67f4'];
@@ -566,6 +744,7 @@ function polarPoint(cx, cy, radius, angle) {
 
 function Donut({ widget, currency, onChannel, metadata, range, setRange }) {
   const isRoas = isRoasDonut(widget);
+  const [hoverSegment, setHoverSegment] = useState(null);
   const items = widget.items || [];
   const values = items.map((item) => Number(item.share ?? item.percent ?? item.value) || 0);
   const total = values.reduce((sum, value) => sum + value, 0) || 1;
@@ -598,13 +777,37 @@ function Donut({ widget, currency, onChannel, metadata, range, setRange }) {
               const start = angle;
               const end = angle + (value / total) * 360;
               angle = end;
-              return <path key={item.key || item.label || index} d={donutSegmentPath(140, 140, 88, start, end)} fill="none" stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]} strokeWidth="38" />;
+              const share = item.share ?? item.percent ?? item.value;
+              const spend = item.spend ?? item.amount ?? item.secondary_value;
+              return (
+                <path
+                  key={item.key || item.label || index}
+                  d={donutSegmentPath(140, 140, 88, start, end)}
+                  fill="none"
+                  stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]}
+                  strokeWidth="38"
+                  onMouseEnter={() => setHoverSegment({
+                    label: item.label,
+                    share,
+                    spend,
+                    spendFormat: item.spend_format || item.secondary_format || 'currency',
+                  })}
+                  onMouseLeave={() => setHoverSegment(null)}
+                />
+              );
             })}
           </svg>
           <div className={styles.roasDonutCenter}>
             <strong>{centerValue}</strong>
             <span>{centerLabel}</span>
           </div>
+          {hoverSegment ? (
+            <div className={styles.chartTooltip}>
+              <strong>{hoverSegment.label}</strong>
+              {hoverSegment.spend !== undefined && hoverSegment.spend !== null ? <span>Spend {formatValue(hoverSegment.spend, hoverSegment.spendFormat, currency)}</span> : null}
+              <b>Share {formatValue(hoverSegment.share, 'percent', currency)}</b>
+            </div>
+          ) : null}
         </div>
         <div className={styles.roasLegend}>
           {items.map((item, index) => {
@@ -628,11 +831,124 @@ function Donut({ widget, currency, onChannel, metadata, range, setRange }) {
 }
 
 function Gauge({ widget, currency }) {
+  if (isBudgetUtilization(widget)) return <BudgetUtilizationWidget widget={widget} currency={currency} />;
   const pct = Math.max(0, Math.min(100, ((Number(widget.value) || 0) / (Number(widget.max) || 100)) * 100));
   return <div className={styles.gaugeWrap}>
     <div className={styles.gauge} style={{ '--pct': `${pct}%` }}><strong>{formatValue(widget.value, widget.format, currency)}</strong><span>{widget.label}</span></div>
     <div className={styles.detailList}>{widget.status ? <StatusChip status={widget.status} /> : null}{(widget.details || []).map((detail) => <p key={detail.label}><span>{detail.label}</span><strong>{formatValue(detail.value, detail.format, currency)}</strong></p>)}</div>
   </div>;
+}
+
+const CHANNEL_COLORS = ['#4f83f1', '#a78bfa', '#f8cb5d', '#fb7d2b', '#5cc7ce'];
+
+function ChannelIcon({ index }) {
+  const common = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '1.9', strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' };
+  const icons = [
+    <svg {...common}><path d="M4 14c3-6 5-7 8-2s5 4 8-2" /><circle cx="8" cy="11" r="2" /></svg>,
+    <svg {...common}><path d="M6 18V9" /><path d="M12 18V6" /><path d="M18 18v-8" /><path d="M6 9l4 4 5-7 3 3" /></svg>,
+    <svg {...common}><rect x="5" y="6" width="14" height="12" rx="2" /><path d="M11 10l4 2-4 2z" /></svg>,
+    <svg {...common}><path d="M5 12h8" /><circle cx="16" cy="12" r="2" /><path d="M8 16h3" /><circle cx="13" cy="16" r="1.5" /><path d="M8 8h3" /><circle cx="13" cy="8" r="1.5" /></svg>,
+    <svg {...common}><path d="M5 12v4" /><path d="M9 9v10" /><path d="M13 6v12" /><path d="M17 10v6" /><path d="M21 12v2" /></svg>,
+  ];
+  return icons[index % icons.length];
+}
+
+function ChannelRoasWidget({ widget, currency }) {
+  const [sortBy, setSortBy] = useState('spend');
+  const items = widget.items || [];
+  const sortedItems = [...items].sort((a, b) => (Number(b[sortBy]) || 0) - (Number(a[sortBy]) || 0));
+  const maxShare = Math.max(1, ...sortedItems.map((item) => Number(item.share) || 0));
+  const totalSpend = items.reduce((sum, item) => sum + (Number(item.spend) || 0), 0);
+  const avgRoas = items.length ? items.reduce((sum, item) => sum + (Number(item.roas) || 0), 0) / items.length : 0;
+  return <div className={styles.channelCard}>
+    <div className={styles.channelCardHeader}>
+      <div><h2>{widget.title}</h2><p>Compare performance across channels</p></div>
+      <select aria-label="Sort channels" value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+        <option value="spend">By Spend</option>
+        <option value="roas">By ROAS</option>
+      </select>
+    </div>
+    <div className={styles.channelRows}>{sortedItems.map((item, index) => {
+      const color = item.color || CHANNEL_COLORS[index % CHANNEL_COLORS.length];
+      const width = Math.max(6, Math.min(100, ((Number(item.share) || 0) / maxShare) * 100));
+      return <div className={styles.channelRow} key={item.channel || item.label} data-tooltip={`${item.label}\nROAS ${formatValue(item.roas, 'multiplier', currency)}\nSpend ${formatValue(item.spend, 'currency', currency)}`} style={{ '--channel-color': color }}>
+        <span className={styles.channelIcon}><ChannelIcon index={index} /></span>
+        <div className={styles.channelInfo}><strong>{item.label}</strong><i><em style={{ width: `${width}%` }} /></i></div>
+        <div className={styles.channelSpend}><strong>{formatValue(item.spend, 'currency', currency)}</strong><span>Total Spend</span></div>
+        <div className={styles.channelRoasPill}><strong>{formatValue(item.roas, 'multiplier', currency)}</strong><span>ROAS</span></div>
+      </div>;
+    })}</div>
+    <div className={styles.channelSummaryStrip}>
+      <div><span>♙</span><strong>{formatValue(avgRoas, 'multiplier', currency)}</strong><small>Avg. ROAS</small></div>
+      <div><span>▣</span><strong>{formatValue(totalSpend, 'currency', currency)}</strong><small>Total Spend</small></div>
+      <div><span>↗</span><strong>+18.6%</strong><small>vs prev 30 days</small></div>
+    </div>
+  </div>;
+}
+
+function BudgetUtilizationWidget({ widget, currency }) {
+  const details = widget.details || [];
+  const detailByLabel = (needle) => details.find((detail) => `${detail.label || ''}`.toLowerCase().includes(needle));
+  const rawValue = Number(widget.value);
+  const rawMax = Number(widget.max) || 100;
+  const pct = widget.empty || !Number.isFinite(rawValue) ? 0 : Math.max(0, Math.min(100, (rawValue / rawMax) * 100));
+  const displayPct = Math.round(pct);
+  const utilizationText = Number.isFinite(rawValue) ? formatValue(rawValue, widget.format || 'percent', currency) : `${displayPct}%`;
+  const centerUtilizationText = Number.isFinite(rawValue) && (widget.format || 'percent') === 'percent' ? formatCompactPercent(rawValue) : utilizationText;
+  const statusLabel = widget.label || widget.status?.label || (widget.empty ? 'No data' : 'On pace');
+  const totalBudget = detailByLabel('total budget');
+  const spent = detailByLabel('spent');
+  const remaining = detailByLabel('remaining');
+  const radius = 82;
+  const center = 120;
+  const circumference = 2 * Math.PI * radius;
+  const dash = circumference * pct / 100;
+
+  if (widget.empty) {
+    return <div className={styles.budgetCard}>
+      <div className={styles.channelCardHeader}>
+        <div><h2>{widget.title}</h2><p>{widget.subtitle || 'Track delivery against allocated budget'}</p></div>
+        <select aria-label="Budget metric"><option>Pacing</option></select>
+      </div>
+      <p className={styles.empty}>No budget data for this period.</p>
+    </div>;
+  }
+
+  return <div className={styles.budgetCard}>
+    <div className={styles.channelCardHeader}>
+      <div><h2>{widget.title}</h2><p>{widget.subtitle || 'Track delivery against allocated budget'}</p></div>
+      <select aria-label="Budget metric"><option>Pacing</option></select>
+    </div>
+    <div className={styles.budgetDonutWrap} data-tooltip={`Utilization ${utilizationText}
+Status ${statusLabel}${remaining ? `
+Remaining ${formatValue(remaining.value, remaining.format, currency)}` : ''}`}>
+      <svg viewBox="0 0 240 240" aria-hidden="true">
+        <circle cx={center} cy={center} r={radius} fill="none" stroke="#e9e0ff" strokeWidth="40" />
+        <circle cx={center} cy={center} r={radius} fill="none" stroke="#6d4cf2" strokeWidth="40" strokeDasharray={`${dash} ${circumference - dash}`} transform={`rotate(-90 ${center} ${center})`} />
+      </svg>
+      <div><strong title={utilizationText}>{centerUtilizationText}</strong><span>{statusLabel}</span>{remaining ? <small>{formatValue(remaining.value, remaining.format, currency)} <em>remaining</em></small> : null}</div>
+    </div>
+    <div className={styles.budgetSummaryStrip}>
+      <div><span>$</span><strong>{totalBudget ? formatValue(totalBudget.value, totalBudget.format, currency) : '—'}</strong><small>Total Budget</small></div>
+      <div><span>◷</span><strong>{spent ? formatValue(spent.value, spent.format, currency) : '—'}</strong><small>Spent</small></div>
+      <div className={styles.budgetUtilizationMetric}><span>∑</span><strong title={utilizationText}>{utilizationText}</strong><small>Utilization</small></div>
+      <div><span>⌁</span><strong>{statusLabel}</strong><small>Delivery status</small></div>
+    </div>
+  </div>;
+}
+
+function ChannelBottomPanel({ insight, recommendations }) {
+  return <article className={`${styles.widget} ${styles.span2} ${styles.channelBottomPanel}`}>
+    <div className={styles.channelInsightBlock}>
+      <span className={styles.channelInsightIcon}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 18V9" /><path d="M12 18V5" /><path d="M18 18v-8" /></svg></span>
+      <div><h2>{insight?.title || 'Channel performance insights'}</h2>{(insight?.items || []).map((item) => <p key={item}>{item}</p>)}</div>
+    </div>
+    <div className={styles.channelRecommendationsBlock}>
+      <h2>{recommendations?.title || 'Recommendations'}</h2>
+      <div>{(recommendations?.items || []).map((item) => <p key={item}><span><InsightIcon tone="good" /></span>{item}</p>)}</div>
+
+    </div>
+  </article>;
 }
 
 const LINE_COLORS = {
@@ -665,13 +981,16 @@ function LineChartWidget({ widget, metadata, range, setRange }) {
   const activeVariant = variants.find((variant) => variant.key === variantKey) || defaultVariant;
   const activeKeys = activeVariant?.series_keys || (widget.series || []).slice(0, 2).map((series) => series.key);
   const activeSeries = (widget.series || []).filter((series) => activeKeys.includes(series.key));
+  const [hoverPoint, setHoverPoint] = useState(null);
 
   const leftSeries = activeSeries.filter((series) => series.axis !== 'right');
   const rightSeries = activeSeries.filter((series) => series.axis === 'right');
+  const leftAxisLabel = leftSeries[0]?.label || activeSeries[0]?.label || '';
+  const rightAxisLabel = rightSeries[0]?.label || activeSeries.find((series) => series.axis === 'right')?.label || '';
   const allPoints = activeSeries[0]?.points || [];
   const chartWidth = 560;
-  const chartHeight = 214;
-  const pad = { left: 48, right: 46, top: 18, bottom: 34 };
+  const chartHeight = 230;
+  const pad = { left: 48, right: 46, top: 24, bottom: 36 };
   const innerWidth = chartWidth - pad.left - pad.right;
   const innerHeight = chartHeight - pad.top - pad.bottom;
 
@@ -705,8 +1024,12 @@ function LineChartWidget({ widget, metadata, range, setRange }) {
       </div>
       {widget.subtitle ? <p className={styles.chartSubtitle}>{widget.subtitle}</p> : null}
       {widget.empty ? <p className={styles.empty}>No data for this period.</p> : <div className={styles.lineChartArea}>
-        <div className={styles.chartLegend}>
-          {activeSeries.map((series, index) => <span key={series.key}><i style={{ background: seriesColor(series, index) }} />{series.label}</span>)}
+        <div className={styles.chartAxisHeader}>
+          <strong>{leftAxisLabel}</strong>
+          <div className={styles.chartLegend}>
+            {activeSeries.map((series, index) => <span key={series.key}><i style={{ background: seriesColor(series, index) }} />{series.label}</span>)}
+          </div>
+          <strong>{rightAxisLabel}</strong>
         </div>
         <svg className={styles.lineChartSvg} viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label={widget.title}>
           {[0, .25, .5, .75, 1].map((ratio) => {
@@ -728,12 +1051,40 @@ function LineChartWidget({ widget, metadata, range, setRange }) {
             const domain = series.axis === 'right' ? rightDomain : leftDomain;
             return <g key={series.key}>
               {path ? <path d={path} fill="none" stroke={seriesColor(series, index)} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /> : null}
-              {(series.points || []).map((point, pointIndex) => point.y === null || point.y === undefined || !Number.isFinite(Number(point.y)) ? null : (
-                <circle key={`${series.key}-${point.x || pointIndex}`} cx={xFor(pointIndex)} cy={yFor(point.y, domain)} r="3.4" fill="#fff" stroke={seriesColor(series, index)} strokeWidth="2.2" />
-              ))}
+              {(series.points || []).map((point, pointIndex) => {
+                if (point.y === null || point.y === undefined || !Number.isFinite(Number(point.y))) return null;
+                const cx = xFor(pointIndex);
+                const cy = yFor(point.y, domain);
+                return (
+                  <circle
+                    key={`${series.key}-${point.x || pointIndex}`}
+                    cx={cx}
+                    cy={cy}
+                    r="4.4"
+                    fill="#fff"
+                    stroke={seriesColor(series, index)}
+                    strokeWidth="2.2"
+                    onMouseEnter={() => setHoverPoint({
+                      left: `${(cx / chartWidth) * 100}%`,
+                      top: `${(cy / chartHeight) * 100}%`,
+                      label: series.label,
+                      date: point.x || `Point ${pointIndex + 1}`,
+                      value: formatValue(point.y, series.format, currency),
+                    })}
+                    onMouseLeave={() => setHoverPoint(null)}
+                  />
+                );
+              })}
             </g>;
           })}
         </svg>
+        {hoverPoint ? (
+          <div className={styles.chartTooltip} style={{ left: hoverPoint.left, top: hoverPoint.top }}>
+            <strong>{hoverPoint.label}</strong>
+            <span>{hoverPoint.date}</span>
+            <b>{hoverPoint.value}</b>
+          </div>
+        ) : null}
       </div>}
     </div>
   );
@@ -789,11 +1140,12 @@ function WidgetBody({ widget, metadata, setChannel, range, setRange }) {
       if (isDetailedKpiGroup(widget)) return <KpiCardGroup items={widget.items || []} currency={currency} />;
       return <div className={styles.kpiGrid}>{(widget.items || []).map((item) => <Kpi key={item.label} item={item} currency={currency} />)}</div>;
     case 'kpi_list':
-      return <div className={styles.list}>{(widget.items || []).map((item) => <p key={item.label}><span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong></p>)}</div>;
+      return <div className={styles.list}>{(widget.items || []).map((item) => <p key={displayText(item.label)}><span>{displayText(item.label)}</span><strong>{formatValue(item.value, item.format, currency)}</strong></p>)}</div>;
     case 'bar_chart':
     case 'progress_list':
-      return <BarList items={widget.items || []} currency={currency} maxValue={widget.type === 'progress_list' ? 100 : undefined} />;
+      return <ProgressListWidget widget={widget} currency={currency} />;
     case 'channel_list':
+      if (isChannelRoas(widget)) return <ChannelRoasWidget widget={widget} currency={currency} />;
       return <BarList items={(widget.items || []).map((item) => ({ ...item, key: item.channel, value: item.spend, format: 'currency', color: metadata?.theme?.channel_colors?.[item.channel] }))} currency={currency} />;
     case 'donut':
       return <Donut widget={widget} currency={currency} onChannel={setChannel} metadata={metadata} range={range} setRange={setRange} />;
@@ -801,7 +1153,7 @@ function WidgetBody({ widget, metadata, setChannel, range, setRange }) {
       return <Gauge widget={widget} currency={currency} />;
     case 'metric_table':
       if (isDetailedMetricTable(widget)) return <MetricTableWidget widget={widget} currency={currency} metadata={metadata} range={range} setRange={setRange} />;
-      return <div className={styles.list}>{(widget.rows || []).map((row) => <p key={row.metric || row.label}><span>{row.label}<small>{row.details}</small></span><strong>{formatValue(row.value, row.format, currency)}</strong><StatusChip status={row.status} /></p>)}</div>;
+      return <div className={styles.list}>{(widget.rows || []).map((row) => <p key={row.metric || displayText(row.label)}><span>{displayText(row.label)}<small>{displayText(row.details)}</small></span><strong>{formatValue(row.value, row.format, currency)}</strong><StatusChip status={row.status} /></p>)}</div>;
     case 'field_table':
     case 'data_table':
       return <DataTable widget={widget} currency={currency} />;
@@ -846,6 +1198,11 @@ function renderWidgets(widgets, metadata, setChannel, range, setRange) {
   const output = [];
   for (let index = 0; index < supported.length; index += 1) {
     const widget = supported[index];
+    if (isChannelInsight(widget) && isChannelRecommendation(supported[index + 1])) {
+      output.push(<ChannelBottomPanel key="channel-bottom-panel" insight={widget} recommendations={supported[index + 1]} />);
+      index += 1;
+      continue;
+    }
     if (widget.type === 'text_hero') {
       const maybeKpi = supported[index + 1]?.type === 'kpi' ? supported[index + 1] : null;
       output.push(<HeroWidget key={widget.code || 'report-hero'} summary={widget} kpi={maybeKpi} metadata={metadata} />);
@@ -981,6 +1338,13 @@ export default function PublicReportPortal({ token }) {
     </main>
   );
 }
+
+
+
+
+
+
+
 
 
 
