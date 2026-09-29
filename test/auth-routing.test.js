@@ -10,11 +10,13 @@ const activeUser = {
 };
 
 test('public authentication, invitation, and portal routes never redirect', () => {
-  for (const pathname of ['/', '/login', '/forgot-password', '/reset-password', '/invite-invalid', '/access-denied', '/accept-invitation', '/invite/demo-token', '/userPortal/retisoft-q3']) {
+  for (const pathname of ['/', '/login', '/forgot-password', '/reset-password', '/invite-invalid', '/access-denied', '/accept-invitation', '/invite/demo-token', '/d38e87426008cac9d37b06c15551604e']) {
     assert.equal(isPublicAuthRoute(pathname), true);
     assert.equal(protectedRouteRedirect({ pathname, status: 'unauthenticated', user: null }), null);
   }
   assert.equal(isPublicAuthRoute('/reporting'), false);
+  assert.equal(isPublicAuthRoute('/userPortal/retisoft-q3'), false);
+  assert.equal(isPublicAuthRoute('/not-a-report-token'), false);
 });
 
 test('unauthenticated protected routes preserve path and query in next', () => {

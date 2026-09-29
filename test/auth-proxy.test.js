@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  forwardedAuthorization,
   forwardedCookies,
   localDevelopmentCookie,
   normalizedProxyPath,
@@ -14,8 +15,12 @@ test('authentication proxy only permits its explicit endpoint allowlist', () => 
   assert.equal(normalizedProxyPath(['api', 'v1', 'auth', 'change-password']), 'api/v1/auth/change-password');
   assert.equal(normalizedProxyPath(['api', 'v1', 'agencies', '3', 'users']), 'api/v1/agencies/3/users');
   assert.equal(normalizedProxyPath(['api', 'v1', 'agencies', '3', 'users', '7']), 'api/v1/agencies/3/users/7');
+  assert.equal(normalizedProxyPath(['api', 'v1', 'public', 'reports', 'd38e87426008cac9d37b06c15551604e']), 'api/v1/public/reports/d38e87426008cac9d37b06c15551604e');
+  assert.equal(normalizedProxyPath(['api', 'v1', 'public', 'reports', 'd38e87426008cac9d37b06c15551604e', 'unlock']), 'api/v1/public/reports/d38e87426008cac9d37b06c15551604e/unlock');
+  assert.equal(normalizedProxyPath(['api', 'v1', 'public', 'reports', 'd38e87426008cac9d37b06c15551604e', 'tabs', 'executive_summary']), 'api/v1/public/reports/d38e87426008cac9d37b06c15551604e/tabs/executive_summary');
   assert.throws(() => normalizedProxyPath(['api', 'v1', 'users']), /PROXY_PATH_NOT_ALLOWED/);
   assert.throws(() => normalizedProxyPath(['api', 'v1', 'agencies', '1', 'workspaces']), /PROXY_PATH_NOT_ALLOWED/);
+  assert.throws(() => normalizedProxyPath(['api', 'v1', 'public', 'reports', 'not-a-token']), /PROXY_PATH_NOT_ALLOWED/);
 });
 
 test('only Sanctum cookies are forwarded upstream', () => {
@@ -23,6 +28,19 @@ test('only Sanctum cookies are forwarded upstream', () => {
     forwardedCookies('theme=dark; XSRF-TOKEN=abc; mosaiq-session=xyz; analytics=123'),
     'XSRF-TOKEN=abc; mosaiq-session=xyz',
   );
+});
+
+test('bearer tokens are forwarded only for public report requests', () => {
+  assert.equal(
+    forwardedAuthorization('Bearer public-token.123', 'api/v1/public/reports/d38e87426008cac9d37b06c15551604e'),
+    'Bearer public-token.123',
+  );
+  assert.equal(
+    forwardedAuthorization('Bearer public-token.123', 'api/v1/public/reports/d38e87426008cac9d37b06c15551604e/tabs/executive_summary'),
+    'Bearer public-token.123',
+  );
+  assert.equal(forwardedAuthorization('Bearer public-token.123', 'api/v1/auth/me'), '');
+  assert.equal(forwardedAuthorization('Basic abc', 'api/v1/public/reports/d38e87426008cac9d37b06c15551604e'), '');
 });
 
 test('upstream cookies are made usable by localhost HTTP development', () => {
