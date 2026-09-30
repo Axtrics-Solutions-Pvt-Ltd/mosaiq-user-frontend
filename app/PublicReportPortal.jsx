@@ -134,8 +134,9 @@ function presetLabel(preset) {
 
 function dateRangeOptions(metadata) {
   const presets = metadata?.date_range?.presets || [];
-  const values = presets.includes('this_quarter') ? [...presets] : [...presets, 'this_quarter'];
-  return values.filter(Boolean).map((value) => ({ value, label: presetLabel(value) }));
+  const base = presets.includes('this_quarter') ? [...presets] : [...presets, 'this_quarter'];
+  const values = [...new Set(base.filter((value) => value && value !== 'custom')), 'custom'];
+  return values.map((value) => ({ value, label: presetLabel(value) }));
 }
 
 function rangeForPreset(metadata, preset) {
@@ -175,6 +176,23 @@ function rangeForPreset(metadata, preset) {
 
 function applyRangePreset(metadata, setRange, preset) {
   setRange(rangeForPreset(metadata, preset));
+}
+
+function syncAudienceProfileWidgets(tabData, audienceTabData) {
+  if (!tabData?.widgets?.length || !audienceTabData?.widgets?.length) return tabData;
+  const audienceWidgets = new Map((audienceTabData.widgets || []).map((widget) => [widget.code, widget]));
+  const replacements = {
+    audience_by_segment: 'cultural_segments',
+    language_province_mix: 'audience_language_province_mix',
+  };
+  return {
+    ...tabData,
+    widgets: tabData.widgets.map((widget) => {
+      const sourceCode = replacements[widget.code];
+      const source = sourceCode ? audienceWidgets.get(sourceCode) : null;
+      return source ? { ...source, span: widget.span ?? source.span } : widget;
+    }),
+  };
 }
 
 function changeClass(change) {
@@ -340,9 +358,22 @@ function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRan
           })}
         </nav>
         <div className={styles.headerActions}>
-          {dateOptions.length ? <select className={styles.headerSelect} value={range.preset} onChange={(event) => applyRangePreset(metadata, setRange, event.target.value)} aria-label="Select date range">
-            {dateOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select> : null}
+          {dateOptions.length ? <div className={styles.headerDateControl}>
+            <select className={styles.headerSelect} value={range.preset} onChange={(event) => {
+              const nextPreset = event.target.value;
+              if (nextPreset === 'custom') {
+                setRange((current) => ({ ...current, preset: 'custom' }));
+                return;
+              }
+              applyRangePreset(metadata, setRange, nextPreset);
+            }} aria-label="Select date range">
+              {dateOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            {range.preset === 'custom' ? <div className={styles.customDatePanel}>
+              <label><em>From</em><input type="date" value={range.from} min={metadata?.date_range?.available?.from || undefined} max={range.to || metadata?.date_range?.available?.to || undefined} onChange={(event) => setRange((current) => ({ ...current, from: event.target.value, preset: 'custom' }))} /></label>
+              <label><em>To</em><input type="date" value={range.to} min={range.from || metadata?.date_range?.available?.from || undefined} max={metadata?.date_range?.available?.to || undefined} onChange={(event) => setRange((current) => ({ ...current, to: event.target.value, preset: 'custom' }))} /></label>
+            </div> : null}
+          </div> : null}
         </div>
       </div>
       {active?.tabs?.length ? <nav className={styles.tabs} style={active.accent ? { '--section-strong': active.accent.strong, '--section-soft': active.accent.soft } : undefined} aria-label={`${active.name} tabs`}>
@@ -357,19 +388,8 @@ function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRan
   );
 }
 
-function Filters({ metadata, range, setRange, activeSection }) {
-  if (['marketing_intelligence', 'mmm'].includes(activeSection)) return null;
-  return (
-    <div className={styles.reportControlBar}>
-      <div className={styles.dateSummary}>
-        <span>Date range</span>
-        <div className={styles.dateInputs}>
-          <label><em>From</em><input type="date" value={range.from} min={metadata?.date_range?.available?.from || undefined} max={range.to || metadata?.date_range?.available?.to || undefined} onChange={(event) => setRange((current) => ({ ...current, from: event.target.value, preset: 'custom' }))} /></label>
-          <label><em>To</em><input type="date" value={range.to} min={range.from || metadata?.date_range?.available?.from || undefined} max={metadata?.date_range?.available?.to || undefined} onChange={(event) => setRange((current) => ({ ...current, to: event.target.value, preset: 'custom' }))} /></label>
-        </div>
-      </div>
-    </div>
-  );
+function Filters() {
+  return null;
 }
 
 function WidgetFrame({ widget, children }) {
@@ -528,6 +548,23 @@ function progressBadge(label = '') {
   return clean.slice(0, 2).toUpperCase();
 }
 
+function normalizeAudienceProgressWidget(widget) {
+  if (!['audience_by_segment', 'language_province_mix'].includes(widget.code)) return widget;
+  const footer = [...(widget.footer || [])];
+  if (widget.code === 'audience_by_segment') {
+    const hasShare = footer.some((item) => String(item.label || '').toLowerCase().includes('share'));
+    const shareTotal = (widget.items || []).reduce((sum, item) => sum + (Number(item.share ?? item.value) || 0), 0);
+    if (!hasShare && shareTotal > 0) {
+      footer.push({ label: 'Total share', value: Math.min(100, Math.round(shareTotal)), format: 'percent' });
+    }
+  }
+  if (widget.code === 'language_province_mix' && footer.length === 2) {
+    const total = footer.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
+    footer.push({ label: 'Languages & regions', value: total, format: 'number' });
+  }
+  return { ...widget, footer };
+}
+
 function ProgressFooter({ footer = [], currency }) {
   if (!footer.length) return null;
   return <div className={styles.progressFooter}>{footer.map((item, index) => {
@@ -548,6 +585,26 @@ function ProgressFooter({ footer = [], currency }) {
       {change && !isChangeOnly ? <em className={isNegative ? styles.negative : styles.positive}>{change.value !== null && change.value !== undefined ? `${changePrefix}${formatValue(Math.abs(Number(change.value)), change.format, currency)}` : changePrefix.trim()}{change.label ? <b>{change.label}</b> : null}</em> : null}
     </div>;
   })}</div>;
+}
+
+function AgeDistributionWidget({ widget, currency }) {
+  const items = widget.items || [];
+  return <div className={styles.ageDistributionWidget}>
+    <div className={styles.ageDistributionHeader}>
+      <h2>{widget.title}</h2>
+      {widget.subtitle ? <span>{widget.subtitle}</span> : null}
+    </div>
+    <p>Population by age</p>
+    <div className={styles.ageDistributionRows}>{items.map((item, index) => {
+      const color = item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length];
+      const width = Math.max(0, Math.min(100, Number(item.share ?? item.value) || 0));
+      return <div className={styles.ageDistributionRow} key={item.key || item.label} style={{ '--age-color': color }}>
+        <span>{item.label}</span>
+        <i><em style={{ width: `${width}%` }} /></i>
+        <strong>{formatValue(item.value, item.format, currency)}</strong>
+      </div>;
+    })}</div>
+  </div>;
 }
 
 function ProgressListWidget({ widget, currency }) {
@@ -575,6 +632,22 @@ function ProgressListWidget({ widget, currency }) {
   </div>;
 }
 
+function dataColumnKey(column) {
+  if (column?.key) return column.key;
+  const label = displayText(column?.label || column).toLowerCase();
+  const mapped = {
+    dimension: 'field',
+    field: 'field',
+    pattern: 'value',
+    value: 'value',
+    notes: 'note',
+    note: 'note',
+    details: 'details',
+    'planning implication': 'note',
+  };
+  return mapped[label] || label.replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
 function DataTable({ widget, currency }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -583,6 +656,7 @@ function DataTable({ widget, currency }) {
   const rows = widget.rows || [];
   const columns = widget.columns || [];
   const activeCampaigns = isActiveCampaigns(widget);
+  const showTableTools = activeCampaigns || widget.truncated;
   const statuses = [...new Set(rows.map((row) => row.status?.status?.label || row.status?.status?.code || row.status?.value || row.status).filter(Boolean))];
   const channels = [...new Set(rows.map((row) => row.channel).filter(Boolean))];
   const filtered = rows
@@ -600,19 +674,19 @@ function DataTable({ widget, currency }) {
     });
   return <div className={activeCampaigns ? styles.campaignTableWidget : undefined}>
     {activeCampaigns ? <div className={styles.campaignHeader}><h2>{widget.title}</h2><span>{widget.total || rows.length} campaigns</span></div> : null}
-    <div className={`${styles.tableTools} ${activeCampaigns ? styles.campaignFilters : ''}`}>
-      <input placeholder={activeCampaigns ? 'Search campaigns...' : 'Search rows'} value={search} onChange={(event) => setSearch(event.target.value)} />
+    {showTableTools ? <div className={`${styles.tableTools} ${activeCampaigns ? styles.campaignFilters : ''}`}>
+      {activeCampaigns ? <input placeholder="Search campaigns..." value={search} onChange={(event) => setSearch(event.target.value)} /> : null}
       {activeCampaigns ? <>
         <select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((value) => <option key={value} value={value}>{value}</option>)}</select>
         <select value={channel} onChange={(event) => setChannelFilter(event.target.value)}><option value="">All channels</option>{channels.map((value) => <option key={value} value={value}>{value}</option>)}</select>
         <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="spend">Spend</option><option value="impressions">Impressions</option><option value="ctr">CTR</option><option value="conversions">Conversions</option><option value="campaign">Campaign</option></select>
       </> : widget.truncated ? <span>Showing {rows.length} of {widget.total}</span> : null}
-    </div>
+    </div> : null}
     <div className={styles.tableWrap}>
       <table>
         <thead><tr>{columns.map((column, index) => <th key={column.key || displayText(column) || index}>{displayText(column.label || column)}</th>)}</tr></thead>
         <tbody>{filtered.map((row, index) => <tr key={row.key || row.id || index}>{columns.map((column) => {
-          const key = column.key || String(column).toLowerCase();
+          const key = dataColumnKey(column);
           const cell = row[key];
           const value = cell && typeof cell === 'object' && !Array.isArray(cell) ? cell.value : cell;
           const format = cell && typeof cell === 'object' ? (cell.format || column.format) : column.format;
@@ -740,6 +814,33 @@ function polarPoint(cx, cy, radius, angle) {
     x: cx + radius * Math.cos(radians),
     y: cy + radius * Math.sin(radians),
   };
+}
+
+function GenderSplitWidget({ widget, currency }) {
+  const items = widget.items || [];
+  const total = items.reduce((sum, item) => sum + (Number(item.share ?? item.value) || 0), 0) || 100;
+  let angle = 0;
+  return <div className={styles.genderSplitWidget}>
+    <div className={styles.genderSplitChart}>
+      <svg viewBox="0 0 220 220" aria-hidden="true">
+        {items.map((item, index) => {
+          const value = Number(item.share ?? item.value) || 0;
+          const start = angle;
+          const end = angle + (value / total) * 360;
+          angle = end;
+          return <path key={item.key || item.label} d={donutSegmentPath(110, 110, 84, start, end)} stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]} strokeWidth="36" fill="none" />;
+        })}
+      </svg>
+      <div><strong>100%</strong><span>Split</span></div>
+    </div>
+    <div className={styles.genderSplitLegend}>{items.map((item, index) => (
+      <div key={item.key || item.label}>
+        <i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} />
+        <span>{item.label}</span>
+        <strong>{formatValue(item.value, item.format || 'percent', currency)}</strong>
+      </div>
+    ))}</div>
+  </div>;
 }
 
 function Donut({ widget, currency, onChannel, metadata, range, setRange }) {
@@ -1143,11 +1244,13 @@ function WidgetBody({ widget, metadata, setChannel, range, setRange }) {
       return <div className={styles.list}>{(widget.items || []).map((item) => <p key={displayText(item.label)}><span>{displayText(item.label)}</span><strong>{formatValue(item.value, item.format, currency)}</strong></p>)}</div>;
     case 'bar_chart':
     case 'progress_list':
-      return <ProgressListWidget widget={widget} currency={currency} />;
+      if (widget.code === 'age_distribution') return <AgeDistributionWidget widget={widget} currency={currency} />;
+      return <ProgressListWidget widget={normalizeAudienceProgressWidget(widget)} currency={currency} />;
     case 'channel_list':
       if (isChannelRoas(widget)) return <ChannelRoasWidget widget={widget} currency={currency} />;
       return <BarList items={(widget.items || []).map((item) => ({ ...item, key: item.channel, value: item.spend, format: 'currency', color: metadata?.theme?.channel_colors?.[item.channel] }))} currency={currency} />;
     case 'donut':
+      if (widget.code === 'demographic_gender_split') return <GenderSplitWidget widget={widget} currency={currency} />;
       return <Donut widget={widget} currency={currency} onChannel={setChannel} metadata={metadata} range={range} setRange={setRange} />;
     case 'gauge':
       return <Gauge widget={widget} currency={currency} />;
@@ -1275,9 +1378,16 @@ export default function PublicReportPortal({ token }) {
     let alive = true;
     setTabStatus('loading');
     setTabError(null);
-    publicReportApi.getTab(token, activeTab, { from: range.from, to: range.to, accessToken }).then((response) => {
+    const tabRequest = publicReportApi.getTab(token, activeTab, { from: range.from, to: range.to, accessToken });
+    const audienceRequest = activeTab === 'audience_profile'
+      ? publicReportApi.getTab(token, 'audience', { from: range.from, to: range.to, accessToken })
+      : null;
+
+    Promise.all([tabRequest, audienceRequest].filter(Boolean)).then((responses) => {
       if (!alive) return;
-      setTabData(unwrap(response));
+      const currentTabData = unwrap(responses[0]);
+      const audienceTabData = audienceRequest ? unwrap(responses[1]) : null;
+      setTabData(activeTab === 'audience_profile' ? syncAudienceProfileWidgets(currentTabData, audienceTabData) : currentTabData);
       setTabStatus('ready');
     }).catch((error) => {
       if (!alive) return;
