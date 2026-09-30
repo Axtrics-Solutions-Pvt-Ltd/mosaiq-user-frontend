@@ -638,14 +638,521 @@ function dataColumnKey(column) {
   const mapped = {
     dimension: 'field',
     field: 'field',
+    driver: 'field',
+    category: 'field',
+    indicator: 'field',
+    attitude: 'field',
+    channel: 'field',
+    platform: 'field',
+    content: 'field',
+    topic: 'field',
+    moment: 'field',
+    metric: 'metric',
+    source: 'field',
+    recommendation: 'recommendation',
+    'insight type': 'field',
     pattern: 'value',
     value: 'value',
+    importance: 'value',
+    spending: 'value',
+    direction: 'value',
+    mix: 'value',
+    usage: 'value',
+    engagement: 'value',
+    status: 'value',
+    'best fit': 'best_fit',
+    'data type': 'value',
+    'draft output': 'value',
     notes: 'note',
     note: 'note',
     details: 'details',
+    'why it matters': 'note',
+    'what it means': 'note',
     'planning implication': 'note',
+    'planning note': 'note',
+    'activation note': 'note',
+    'use in creative': 'note',
+    'planning cue': 'note',
+    reason: 'reason',
+    role: 'note',
+    'use case': 'note',
   };
   return mapped[label] || label.replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+function plainCellValue(cell) {
+  return cell && typeof cell === 'object' && !Array.isArray(cell) ? (cell.value ?? cell.label ?? '') : cell;
+}
+
+function GeoDataTable({ widget, currency }) {
+  const columns = widget.columns || [];
+  return <div className={styles.geoTableWrap}>
+    <table>
+      <thead><tr>{columns.map((column, index) => <th key={column.key || index}>{displayText(column.label || column)}</th>)}</tr></thead>
+      <tbody>{(widget.rows || []).map((row, rowIndex) => <tr key={row.key || row.id || rowIndex}>{columns.map((column, columnIndex) => {
+        const key = dataColumnKey(column);
+        const cell = row[key];
+        const value = plainCellValue(cell);
+        const format = cell && typeof cell === 'object' ? (cell.format || column.format) : column.format;
+        return <td key={key || columnIndex}>{formatValue(displayText(value), format, currency)}</td>;
+      })}</tr>)}</tbody>
+    </table>
+  </div>;
+}
+
+function GeoConcentrationChart({ widget }) {
+  const items = widget.items || [];
+  const points = items.map((item, index) => ({
+    label: String(item.label || '').replace(' CMA', ''),
+    value: Number(item.value) || 0,
+    x: 40 + index * (420 / Math.max(items.length - 1, 1)),
+    y: 32 + (1 - ((Number(item.value) || 0) / Math.max(1, ...items.map((entry) => Number(entry.value) || 0)))) * 190,
+    color: item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length],
+  }));
+  const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
+  return <div className={styles.geoConcentrationChart}>
+    <h3>{widget.title}</h3>
+    <div className={styles.geoChartStage}>
+      <span>Key markets</span>
+      <span>Concentration</span>
+      <svg viewBox="0 0 520 270" aria-hidden="true">
+        <path className={styles.geoAxis} d="M40 20 V232 H500" />
+        <path className={styles.geoLine} d={path} />
+        {points.map((point) => <circle key={point.label} cx={point.x} cy={point.y} r="5.5" fill={point.color} stroke="#fff" strokeWidth="3" />)}
+      </svg>
+      <div className={styles.geoChartLabels}>{points.map((point) => <strong key={point.label}>{point.label}</strong>)}</div>
+    </div>
+  </div>;
+}
+
+function GeoDensityGrid({ widget }) {
+  return <div className={styles.geoDensityGrid}>
+    <p>Population and reach</p>
+    <div className={styles.geoDensityHeader}><span />{(widget.columns || []).map((column) => <span key={column}>{column}</span>)}</div>
+    {(widget.rows || []).map((row) => <div className={styles.geoDensityRow} key={row.label}>
+      <strong>{row.label}</strong>
+      {(row.values || []).map((value, index) => <span key={`${row.label}-${index}`}>{value}</span>)}
+    </div>)}
+  </div>;
+}
+
+function GeoCard({ widget, children }) {
+  return <article className={styles.geoCard}>
+    <div className={styles.geoCardHeader}><h2>{widget.title}</h2>{widget.subtitle ? <span>{widget.subtitle}</span> : null}</div>
+    {children}
+  </article>;
+}
+
+function MmmHero() {
+  return <article className={styles.mmmHero}>
+    <div><span>Media Mix Model</span><h1>Turn media history into the next best plan</h1><p>One view of what created demand, where spend is nearing its limit, and how the next budget could perform.</p></div>
+    <div><em>● Model ready</em><button type="button">↻ Refresh model</button></div>
+  </article>;
+}
+
+function MmmContextBar() {
+  return <article className={styles.mmmContextBar}>
+    <div><strong>Vibrant Reach Media</strong><span>Connected data · 26 weeks · 5 channels</span></div>
+    <div><label>Outcome<select><option>Revenue</option></select></label><label>View<select><option>Weekly</option></select></label><label>Market<select><option>National</option></select></label></div>
+  </article>;
+}
+
+function MmmSteps() {
+  const steps = [['01', 'Build the model', 'Choose what to measure'], ['02', 'Read the result', 'Separate demand from media'], ['03', 'Plan the next dollar', 'Optimize or test a scenario']];
+  return <div className={styles.mmmSteps}>{steps.map((step) => <div key={step[0]}><b>{step[0]}</b><strong>{step[1]}</strong><span>{step[2]}</span></div>)}</div>;
+}
+
+function MmmModelInput({ widget }) {
+  return <MediaCard widget={widget}>
+    <div className={styles.mmmInputIntro}><h3>The model starts with the data you already have</h3><p>We match campaign activity to a business outcome and clean the common issues before modelling begins.</p></div>
+    <div className={styles.mmmInputList}>{(widget.items || []).map((item, index) => <div key={item}><strong>{['Media activity', 'Business result', 'Context signals', 'Model note'][index] || `Input ${index + 1}`}</strong><span>{item}</span></div>)}</div>
+    <div className={styles.mmmTags}><span>Excel</span><span>CSV</span><span>Manual entry</span><em>API connection planned for Phase 2</em></div>
+  </MediaCard>;
+}
+
+function MmmReadiness({ widget, currency }) {
+  const overall = widget.footer?.[0];
+  return <MediaCard widget={widget}>
+    {overall ? <div className={styles.mmmReadinessScore}><strong>{formatValue(overall.value, overall.format, currency)}</strong><span>Ready to model</span><small>High-quality history for this view</small></div> : null}
+    <BehaviourProgress widget={widget} currency={currency} />
+    <p className={styles.mmmHelpText}>Checks include missing dates, duplicate rows, inconsistent names or dates, negative spend, spikes, zeros, and gaps in the time series.</p>
+  </MediaCard>;
+}
+
+function MmmKpiStrip({ widget, currency }) {
+  return <div className={styles.mmmKpiStrip}>{(widget.items || []).map((item) => <div key={item.label}><span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong>{item.change ? <small className={styles.positive}>↑ {formatValue(item.change.value, item.change.format, currency)} {item.change.label}</small> : null}</div>)}</div>;
+}
+
+function MmmOutcomeStory({ summary, composition, currency }) {
+  return <article className={`${styles.mediaCard} ${styles.mmmOutcomeStory}`}>
+    <div className={styles.mmmOutcomeHeader}><div><span>The outcome story</span><h2>Marketing created {summary?.items?.[1]?.value || 'meaningful'} of the result</h2><p>The model separates natural demand from the lift created by media.</p></div>{summary ? <MmmKpiStrip widget={summary} currency={currency} /> : null}</div>
+    {composition ? <div className={styles.mmmComposition}><MediaBrandDonut widget={composition} currency={currency} /><div className={styles.mmmCompositionTable}>{(composition.items || []).map((item, index) => <div key={item.key || item.label}><i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} /><span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong></div>)}</div></div> : null}
+  </article>;
+}
+
+function MmmWhy({ carryover, diminishing, fit, currency }) {
+  return <MediaCard widget={{ title: 'Why this is MMM', subtitle: 'Model evidence' }}>
+    {diminishing ? <div className={styles.mmmWhyText}><h3>{diminishing.headline}</h3><p>{diminishing.body}</p></div> : null}
+    {carryover ? <BehaviourProgress widget={carryover} currency={currency} /> : null}
+    {fit ? <div className={styles.mmmFitGrid}>{(fit.items || []).map((item) => <div key={item.label}><span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong></div>)}</div> : null}
+  </MediaCard>;
+}
+
+function MmmReadout({ widget }) {
+  return <MediaCard widget={{ ...widget, title: 'AI Readout' }}>
+    <div className={styles.mmmReadout}>{(widget.items || []).map((item, index) => <div key={item.title}><b>{index + 1}</b><p><strong>{item.title}</strong> {item.body}</p><a>{item.owner}</a></div>)}</div>
+  </MediaCard>;
+}
+
+function MmmLayout({ widgets, metadata }) {
+  const currency = metadata?.currency || 'CAD';
+  const byCode = new Map(widgets.map((widget) => [widget.code, widget]));
+  const input = byCode.get('mmm_model_input');
+  const readiness = byCode.get('mmm_data_readiness');
+  const summary = byCode.get('mmm_outcome_summary');
+  const composition = byCode.get('mmm_outcome_composition');
+  const diagnosis = byCode.get('mmm_channel_diagnosis');
+  const carryover = byCode.get('mmm_carryover');
+  const diminishing = byCode.get('mmm_diminishing_returns');
+  const fit = byCode.get('mmm_model_fit');
+  const optimizer = byCode.get('mmm_optimizer_mix');
+  const readout = byCode.get('mmm_readout');
+  return <div className={styles.mmmLayout}>
+    <MmmHero />
+    <MmmContextBar />
+    <MmmSteps />
+    <div className={styles.mmmTwoCol}>{input ? <MmmModelInput widget={input} /> : null}{readiness ? <MmmReadiness widget={readiness} currency={currency} /> : null}</div>
+    <article className={styles.mmmSettings}><div><strong>Model settings</strong><span>Measure media effectiveness · Weekly · National · automatic carryover and saturation curves</span></div><button>→ Run model</button></article>
+    <MmmOutcomeStory summary={summary} composition={composition} currency={currency} />
+    <div className={styles.mmmTwoCol}>{diagnosis ? <MediaCard widget={diagnosis}><BehaviourTable widget={diagnosis} currency={currency} /></MediaCard> : null}<MmmWhy carryover={carryover} diminishing={diminishing} fit={fit} currency={currency} /></div>
+    <article className={styles.mmmPlan}><div><span>Plan the next dollar</span><h2>Use the model to move budget before performance moves</h2><p>Recommendations balance historical performance, marginal ROAS, saturation, carryover, and the constraints you set.</p></div><strong>Expected upside vs current plan<br /><em>+6% conversions</em></strong></article>
+    <div className={styles.mmmTwoCol}>{optimizer ? <MediaCard widget={{ ...optimizer, title: 'Optimizer' }}><BehaviourTable widget={optimizer} currency={currency} /></MediaCard> : null}{readout ? <MmmReadout widget={readout} /> : null}</div>
+  </div>;
+}
+
+function AudienceOverviewCard({ widget, currency }) {
+  return <MediaCard widget={{ ...widget, subtitle: widget.subtitle || 'Snapshot' }}>
+    <div className={styles.audienceOverviewRows}>{(widget.items || []).map((item) => <div key={item.label}>
+      <span>{item.label}</span>
+      <strong>{formatValue(item.value, item.format, currency)}</strong>
+    </div>)}</div>
+  </MediaCard>;
+}
+
+function AudienceProfileDonut({ widget, currency }) {
+  const items = widget.items || [];
+  const total = items.reduce((sum, item) => sum + (Number(item.share ?? item.value) || 0), 0) || 100;
+  let angle = 0;
+  const centerValue = widget.center ? formatValue(widget.center.value, widget.center.format, currency) : '100%';
+  const centerLabel = widget.center?.label || 'Split';
+  return <div className={styles.mediaDonutBlock}>
+    <div className={styles.mediaDonutChart}>
+      <svg viewBox="0 0 220 220" aria-hidden="true">
+        {items.map((item, index) => {
+          const value = Number(item.share ?? item.value) || 0;
+          const start = angle;
+          const end = angle + (value / total) * 360;
+          angle = end;
+          return <path key={item.key || item.label} d={donutSegmentPath(110, 110, 78, start, end)} stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]} strokeWidth="34" fill="none" />;
+        })}
+      </svg>
+      <div><strong>{centerValue}</strong><span>{centerLabel}</span></div>
+    </div>
+    <div className={styles.mediaDonutLegend}>{items.map((item, index) => <div key={item.key || item.label}>
+      <i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} />
+      <span>{item.label}</span>
+      <strong>{formatValue(item.value, item.format || 'percent', currency)}</strong>
+    </div>)}</div>
+  </div>;
+}
+
+function AudienceProfileContent({ widget, currency }) {
+  if (widget.type === 'progress_list') return <ProgressListWidget widget={widget} currency={currency} />;
+  if (widget.type === 'donut') return <AudienceProfileDonut widget={widget} currency={currency} />;
+  if (widget.type === 'heatmap') return <BehaviourHeatmap widget={widget} />;
+  return <BehaviourTable widget={widget} currency={currency} />;
+}
+
+function AudienceProfileLayout({ widgets, metadata }) {
+  const currency = metadata?.currency || 'CAD';
+  const byCode = new Map(widgets.map((widget) => [widget.code, widget]));
+  const left = [
+    byCode.get('audience_overview'),
+    byCode.get('audience_by_segment'),
+    byCode.get('language_province_mix'),
+    byCode.get('language_reach'),
+    byCode.get('language_insights'),
+  ].filter(Boolean);
+  const right = [
+    byCode.get('cultural_identity'),
+    byCode.get('religion_faith'),
+    byCode.get('generation_split'),
+    byCode.get('immigration_profile'),
+    byCode.get('cultural_values_index'),
+    byCode.get('family_values'),
+  ].filter(Boolean);
+  const renderWidget = (widget) => widget.code === 'audience_overview'
+    ? <AudienceOverviewCard key={widget.code} widget={widget} currency={currency} />
+    : <MediaCard key={widget.code} widget={widget}><AudienceProfileContent widget={widget} currency={currency} /></MediaCard>;
+  return <div className={styles.audienceProfileLayout}>
+    <div className={styles.mediaColumn}>{left.map(renderWidget)}</div>
+    <div className={styles.mediaColumn}>{right.map(renderWidget)}</div>
+  </div>;
+}
+
+function InsightGaugeCard({ gauge, scores, currency }) {
+  const value = Number(gauge?.value) || 0;
+  const max = Number(gauge?.max) || 100;
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  const items = scores?.items || [];
+  return <MediaCard widget={gauge || scores}>
+    <div className={styles.insightGaugeBlock}>
+      <div className={styles.insightGauge} style={{ '--gauge-pct': `${pct}%` }}>
+        <div><strong>{formatValue(value, gauge?.format || 'number', currency)}%</strong><span>{gauge?.label || 'Opportunity score'}</span></div>
+      </div>
+    </div>
+    <div className={styles.insightScoreList}>{items.map((item) => <div key={item.label}>
+      <span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong>
+    </div>)}</div>
+  </MediaCard>;
+}
+
+function InsightProgress({ widget, currency }) {
+  return <BehaviourProgress widget={widget} currency={currency} />;
+}
+
+function InsightLayout({ widgets, metadata }) {
+  const currency = metadata?.currency || 'CAD';
+  const byCode = new Map(widgets.map((widget) => [widget.code, widget]));
+  const gauge = byCode.get('opportunity_index');
+  const scores = byCode.get('opportunity_scores');
+  const left = [
+    { type: 'gauge', gauge, scores },
+    { first: byCode.get('opportunity_drivers') },
+    { first: byCode.get('media_planning_recs') },
+  ];
+  const right = [
+    { first: byCode.get('cross_audience_comparison'), second: byCode.get('audience_comparison_score') },
+    { first: byCode.get('ai_strategic_insights') },
+    { first: byCode.get('data_sources') },
+  ];
+  const renderEntry = (entry) => {
+    if (entry.type === 'gauge') return (entry.gauge || entry.scores) ? <InsightGaugeCard key="opportunity-index" gauge={entry.gauge} scores={entry.scores} currency={currency} /> : null;
+    const widget = entry.first;
+    if (!widget) return null;
+    if (entry.second) return <MediaCard key={widget.code} widget={widget}>
+      <BehaviourTable widget={widget} currency={currency} />
+      <div className={styles.mediaGroupedBlock}><h3>{entry.second.title}</h3><InsightProgress widget={entry.second} currency={currency} /></div>
+    </MediaCard>;
+    return <MediaCard key={widget.code} widget={widget}>{widget.type === 'progress_list' ? <InsightProgress widget={widget} currency={currency} /> : <BehaviourTable widget={widget} currency={currency} />}</MediaCard>;
+  };
+  return <div className={styles.insightLayout}>
+    <div className={styles.mediaColumn}>{left.map(renderEntry)}</div>
+    <div className={styles.mediaColumn}>{right.map(renderEntry)}</div>
+  </div>;
+}
+
+function MediaBrandDonut({ widget, currency }) {
+  const items = widget.items || [];
+  const total = items.reduce((sum, item) => sum + (Number(item.share ?? item.value) || 0), 0) || 100;
+  let angle = 0;
+  return <div className={styles.mediaDonutBlock}>
+    <div className={styles.mediaDonutChart}>
+      <svg viewBox="0 0 220 220" aria-hidden="true">
+        {items.map((item, index) => {
+          const value = Number(item.share ?? item.value) || 0;
+          const start = angle;
+          const end = angle + (value / total) * 360;
+          angle = end;
+          return <path key={item.key || item.label} d={donutSegmentPath(110, 110, 78, start, end)} stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]} strokeWidth="34" fill="none" />;
+        })}
+      </svg>
+      <div><strong>100%</strong><span>Reach mix</span></div>
+    </div>
+    <div className={styles.mediaDonutLegend}>{items.map((item, index) => <div key={item.key || item.label}>
+      <i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} />
+      <span>{item.label}</span>
+      <strong>{formatValue(item.value, item.format || 'percent', currency)}</strong>
+    </div>)}</div>
+  </div>;
+}
+
+function MediaBrandHeatmap({ widget }) {
+  const columns = widget.columns || [];
+  return <div className={styles.mediaHeatmap}>
+    <div className={styles.mediaHeatmapHeader} style={{ '--media-columns': columns.length + 1 }}><span>{displayText(widget.rows?.[0]?.label ? '' : 'Interest')}</span>{columns.map((column) => <span key={column}>{column}</span>)}</div>
+    {(widget.rows || []).map((row) => <div className={styles.mediaHeatmapRow} key={row.label} style={{ '--media-columns': columns.length + 1 }}>
+      <strong>{row.label}</strong>
+      {(row.values || []).map((value, index) => <span key={`${row.label}-${index}`}>{value}</span>)}
+    </div>)}
+  </div>;
+}
+
+function MediaSeasonalityChart({ widget }) {
+  const items = widget.items || [];
+  const values = items.map((item) => Number(item.value) || 0);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 1);
+  const points = items.map((item, index) => ({
+    label: item.label,
+    value: Number(item.value) || 0,
+    x: 34 + index * (430 / Math.max(items.length - 1, 1)),
+    y: 28 + (1 - (((Number(item.value) || 0) - min) / Math.max(max - min, 1))) * 174,
+    color: item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length],
+  }));
+  const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
+  return <div className={styles.mediaSeasonalityChart}>
+    <div><span>Seasonal weight</span><span>Campaign window</span></div>
+    <svg viewBox="0 0 500 240" aria-hidden="true">
+      <path className={styles.geoAxis} d="M34 20 V204 H476" />
+      <path className={styles.geoLine} d={path} />
+      {points.map((point) => <circle key={point.label} cx={point.x} cy={point.y} r="4.5" fill={point.color} stroke="#fff" strokeWidth="3" />)}
+    </svg>
+    <div className={styles.mediaSeasonalityLabels}>{points.map((point) => <strong key={point.label}>{point.label}</strong>)}</div>
+  </div>;
+}
+
+function MediaCard({ widget, children }) {
+  return <article className={styles.mediaCard}>
+    <div className={styles.mediaCardHeader}><h2>{widget.title}</h2>{widget.subtitle ? <span>{widget.subtitle}</span> : null}</div>
+    {children}
+  </article>;
+}
+
+function MediaWidgetContent({ widget, currency }) {
+  if (widget.code === 'media_consumption') return <MediaBrandDonut widget={widget} currency={currency} />;
+  if (widget.type === 'progress_list' || widget.type === 'bar_chart') return <BehaviourProgress widget={widget} currency={currency} />;
+  if (widget.type === 'heatmap') return <MediaBrandHeatmap widget={widget} />;
+  return <BehaviourTable widget={widget} currency={currency} />;
+}
+
+function MediaGroupedCard({ first, second, currency }) {
+  return <MediaCard widget={first}>
+    <MediaWidgetContent widget={first} currency={currency} />
+    {second ? <div className={styles.mediaGroupedBlock}>
+      <h3>{second.title}</h3>
+      <MediaWidgetContent widget={second} currency={currency} />
+    </div> : null}
+  </MediaCard>;
+}
+
+function MediaBrandLayout({ widgets, metadata }) {
+  const currency = metadata?.currency || 'CAD';
+  const byCode = new Map(widgets.map((widget) => [widget.code, widget]));
+  const left = [
+    { first: byCode.get('media_consumption'), second: byCode.get('social_penetration') },
+    { first: byCode.get('media_mix_detail') },
+    { first: byCode.get('social_media_profile') },
+    { first: byCode.get('content_preferences') },
+  ];
+  const right = [
+    { first: byCode.get('content_emphasis') },
+    { first: byCode.get('brand_relationships') },
+    { first: byCode.get('advertising_insights') },
+    { first: byCode.get('cultural_calendar') },
+    { first: byCode.get('seasonality_curve') },
+  ];
+  return <div className={styles.mediaLayout}>
+    <div className={styles.mediaColumn}>{left.filter((entry) => entry.first).map((entry) => entry.second ? <MediaGroupedCard key={entry.first.code} first={entry.first} second={entry.second} currency={currency} /> : <MediaCard key={entry.first.code} widget={entry.first}><MediaWidgetContent widget={entry.first} currency={currency} /></MediaCard>)}</div>
+    <div className={styles.mediaColumn}>{right.filter((entry) => entry.first).map((entry) => entry.first.code === 'seasonality_curve' ? <MediaCard key={entry.first.code} widget={entry.first}><MediaSeasonalityChart widget={entry.first} /></MediaCard> : <MediaCard key={entry.first.code} widget={entry.first}><MediaWidgetContent widget={entry.first} currency={currency} /></MediaCard>)}</div>
+  </div>;
+}
+
+function BehaviourTable({ widget, currency }) {
+  return <GeoDataTable widget={widget} currency={currency} />;
+}
+
+function BehaviourProgress({ widget, currency }) {
+  const items = widget.items || [];
+  return <div className={styles.behaviourProgress}>
+    {items.map((item, index) => {
+      const color = item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length];
+      const width = Math.max(0, Math.min(100, Number(item.share ?? item.value) || 0));
+      return <div className={styles.behaviourProgressRow} key={item.key || item.label} style={{ '--behaviour-color': color }}>
+        <span>{item.label}</span>
+        <i><em style={{ width: `${width}%` }} /></i>
+        <strong>{formatValue(item.value, item.format, currency)}</strong>
+      </div>;
+    })}
+  </div>;
+}
+
+function BehaviourHeatmap({ widget }) {
+  return <div className={styles.behaviourHeatmap}>
+    <div className={styles.behaviourHeatmapHeader}><span>{displayText(widget.rows?.[0]?.label ? '' : 'Attitude strength')}</span>{(widget.columns || []).map((column) => <span key={column}>{column}</span>)}</div>
+    {(widget.rows || []).map((row) => <div className={styles.behaviourHeatmapRow} key={row.label}>
+      <strong>{row.label}</strong>
+      {(row.values || []).map((value, index) => <span key={`${row.label}-${index}`}>{value}</span>)}
+    </div>)}
+  </div>;
+}
+
+function BehaviourCard({ widget, children }) {
+  return <article className={styles.behaviourCard}>
+    <div className={styles.behaviourCardHeader}><h2>{widget.title}</h2>{widget.subtitle ? <span>{widget.subtitle}</span> : null}</div>
+    {children}
+  </article>;
+}
+
+function BehaviourWidgetContent({ widget, currency }) {
+  if (widget.type === 'progress_list' || widget.type === 'bar_chart') return <BehaviourProgress widget={widget} currency={currency} />;
+  if (widget.type === 'heatmap') return <BehaviourHeatmap widget={widget} />;
+  return <BehaviourTable widget={widget} currency={currency} />;
+}
+
+function BehaviourGroupedCard({ first, second, currency }) {
+  return <BehaviourCard widget={first}>
+    <BehaviourWidgetContent widget={first} currency={currency} />
+    {second ? <div className={styles.behaviourGroupedProgress}>
+      <h3>{second.title}</h3>
+      <BehaviourWidgetContent widget={second} currency={currency} />
+    </div> : null}
+  </BehaviourCard>;
+}
+
+function BehaviourLayout({ widgets, metadata }) {
+  const currency = metadata?.currency || 'CAD';
+  const byCode = new Map(widgets.map((widget) => [widget.code, widget]));
+  const left = [
+    byCode.get('psychographic_profile'),
+    byCode.get('core_values'),
+    byCode.get('cultural_mindset'),
+    byCode.get('mindset_matrix'),
+    byCode.get('shopping_behaviour'),
+    byCode.get('category_spending'),
+  ].filter(Boolean);
+  const rightTop = [byCode.get('purchase_drivers'), byCode.get('consumer_categories')].filter(Boolean);
+  const financial = byCode.get('financial_behaviour');
+  const financialActivity = byCode.get('financial_activity');
+  const digital = byCode.get('digital_behaviour');
+  const digitalAdoption = byCode.get('digital_adoption');
+  return <div className={styles.behaviourLayout}>
+    <div className={styles.behaviourColumn}>{left.map((widget) => <BehaviourCard key={widget.code} widget={widget}><BehaviourWidgetContent widget={widget} currency={currency} /></BehaviourCard>)}</div>
+    <div className={styles.behaviourColumn}>
+      {rightTop.map((widget) => <BehaviourCard key={widget.code} widget={widget}><BehaviourWidgetContent widget={widget} currency={currency} /></BehaviourCard>)}
+      {financial ? <BehaviourGroupedCard first={financial} second={financialActivity} currency={currency} /> : null}
+      {digital ? <BehaviourGroupedCard first={digital} second={digitalAdoption} currency={currency} /> : null}
+    </div>
+  </div>;
+}
+
+function GeographicInsightsLayout({ widgets, metadata }) {
+  const currency = metadata?.currency || 'CAD';
+  const byCode = new Map(widgets.map((widget) => [widget.code, widget]));
+  const province = byCode.get('province_concentration');
+  const concentration = byCode.get('regional_concentration');
+  const clusters = byCode.get('top_cma_clusters');
+  const density = byCode.get('regional_density');
+  return <div className={styles.geoLayout}>
+    {province || concentration ? <GeoCard widget={province || concentration}>
+      {province ? <GeoDataTable widget={province} currency={currency} /> : null}
+      {concentration ? <GeoConcentrationChart widget={concentration} /> : null}
+    </GeoCard> : null}
+    <div className={styles.geoRightColumn}>
+      {clusters ? <GeoCard widget={clusters}><GeoDataTable widget={clusters} currency={currency} /></GeoCard> : null}
+      {density ? <GeoCard widget={density}><GeoDensityGrid widget={density} /></GeoCard> : null}
+    </div>
+  </div>;
 }
 
 function DataTable({ widget, currency }) {
@@ -1296,8 +1803,14 @@ const SUPPORTED_WIDGET_TYPES = new Set([
   'recommendation_list',
 ]);
 
-function renderWidgets(widgets, metadata, setChannel, range, setRange) {
+function renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab) {
   const supported = widgets.filter((widget) => SUPPORTED_WIDGET_TYPES.has(widget.type));
+  if (activeTab === 'mmm') return <MmmLayout widgets={supported} metadata={metadata} />;
+  if (activeTab === 'audience_profile') return <AudienceProfileLayout widgets={supported} metadata={metadata} />;
+  if (activeTab === 'geographic_insights') return <GeographicInsightsLayout widgets={supported} metadata={metadata} />;
+  if (activeTab === 'behaviour') return <BehaviourLayout widgets={supported} metadata={metadata} />;
+  if (activeTab === 'media_brand') return <MediaBrandLayout widgets={supported} metadata={metadata} />;
+  if (activeTab === 'insights_comparison') return <InsightLayout widgets={supported} metadata={metadata} />;
   const output = [];
   for (let index = 0; index < supported.length; index += 1) {
     const widget = supported[index];
@@ -1378,16 +1891,9 @@ export default function PublicReportPortal({ token }) {
     let alive = true;
     setTabStatus('loading');
     setTabError(null);
-    const tabRequest = publicReportApi.getTab(token, activeTab, { from: range.from, to: range.to, accessToken });
-    const audienceRequest = activeTab === 'audience_profile'
-      ? publicReportApi.getTab(token, 'audience', { from: range.from, to: range.to, accessToken })
-      : null;
-
-    Promise.all([tabRequest, audienceRequest].filter(Boolean)).then((responses) => {
+    publicReportApi.getTab(token, activeTab, { from: range.from, to: range.to, accessToken }).then((response) => {
       if (!alive) return;
-      const currentTabData = unwrap(responses[0]);
-      const audienceTabData = audienceRequest ? unwrap(responses[1]) : null;
-      setTabData(activeTab === 'audience_profile' ? syncAudienceProfileWidgets(currentTabData, audienceTabData) : currentTabData);
+      setTabData(unwrap(response));
       setTabStatus('ready');
     }).catch((error) => {
       if (!alive) return;
@@ -1409,8 +1915,8 @@ export default function PublicReportPortal({ token }) {
     if (tabStatus === 'error') return <ApiErrorState compact title="We couldn't load this tab" message={errorMessage(tabError)} onRetry={() => setRange((current) => ({ ...current }))} />;
     const widgets = tabData?.widgets || [];
     if (!widgets.length) return <div className={styles.emptyTab}>No widgets are enabled for this tab.</div>;
-    return renderWidgets(widgets, metadata, undefined, range, setRange);
-  }, [metadata, range, tabData, tabError, tabStatus]);
+    return renderWidgets(widgets, metadata, undefined, range, setRange, activeTab);
+  }, [activeTab, metadata, range, tabData, tabError, tabStatus]);
 
   async function handleUnlock(password) {
     setUnlocking(true);
