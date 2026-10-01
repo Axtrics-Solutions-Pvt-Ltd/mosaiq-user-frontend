@@ -121,6 +121,25 @@ function firstTab(sections = []) {
   return section ? { section: section.code, tab: section.tabs[0].code } : { section: '', tab: '' };
 }
 
+function selectionFromUrl(sections = []) {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const sectionCode = params.get('section') || '';
+  const tabCode = params.get('tab') || '';
+  if (!sectionCode || !tabCode) return null;
+  const section = sections.find((item) => item.code === sectionCode);
+  const tab = section?.tabs?.find((item) => item.code === tabCode);
+  return section && tab ? { section: section.code, tab: tab.code } : null;
+}
+
+function syncSelectionToUrl(section, tab) {
+  if (typeof window === 'undefined' || !section || !tab) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set('section', section);
+  url.searchParams.set('tab', tab);
+  window.history.replaceState(null, '', url.toString());
+}
+
 function defaultRange(metadata) {
   const range = metadata?.date_range?.default || {};
   const available = metadata?.date_range?.available || {};
@@ -781,9 +800,14 @@ function GeoCard({ widget, children }) {
 }
 
 function MmmHero() {
+  const refreshModel = () => {
+    if (typeof window === 'undefined') return;
+    syncSelectionToUrl('mmm', 'mmm');
+    window.location.reload();
+  };
   return <article className={styles.mmmHero}>
     <div><span>Media Mix Model</span><h1>Turn media history into the next best plan</h1><p>One view of what created demand, where spend is nearing its limit, and how the next budget could perform.</p></div>
-    <div><em>● Model ready</em><button type="button">↻ Refresh model</button></div>
+    <div><em>● Model ready</em><button type="button" onClick={refreshModel}>↻ Refresh model</button></div>
   </article>;
 }
 
@@ -859,7 +883,6 @@ function MmmLayout({ widgets, metadata }) {
     <MmmContextBar />
     <MmmSteps />
     <div className={styles.mmmTwoCol}>{input ? <MmmModelInput widget={input} /> : null}{readiness ? <MmmReadiness widget={readiness} currency={currency} /> : null}</div>
-    <article className={styles.mmmSettings}><div><strong>Model settings</strong><span>Measure media effectiveness · Weekly · National · automatic carryover and saturation curves</span></div><button>→ Run model</button></article>
     <MmmOutcomeStory summary={summary} composition={composition} currency={currency} />
     <div className={styles.mmmTwoCol}>{diagnosis ? <MediaCard widget={diagnosis}><BehaviourTable widget={diagnosis} currency={currency} /></MediaCard> : null}<MmmWhy carryover={carryover} diminishing={diminishing} fit={fit} currency={currency} /></div>
     <article className={styles.mmmPlan}><div><span>Plan the next dollar</span><h2>Use the model to move budget before performance moves</h2><p>Recommendations balance historical performance, marginal ROAS, saturation, carryover, and the constraints you set.</p></div><strong>Expected upside vs current plan<br /><em>+6% conversions</em></strong></article>
@@ -1919,7 +1942,7 @@ export default function PublicReportPortal({ token }) {
       setMetadata(next);
       setMetadataStatus(next.requires_password ? 'password' : 'ready');
       if (!next.requires_password) {
-        const initial = firstTab(next.sections || []);
+        const initial = selectionFromUrl(next.sections || []) || firstTab(next.sections || []);
         setActiveSection((current) => current || initial.section);
         setActiveTab((current) => current || initial.tab);
         setRange((current) => current.from && current.to ? current : defaultRange(next));
@@ -1993,6 +2016,7 @@ export default function PublicReportPortal({ token }) {
   function selectTab(section, tab) {
     setActiveSection(section || '');
     setActiveTab(tab || '');
+    syncSelectionToUrl(section, tab);
     setTabData(null);
   }
 
