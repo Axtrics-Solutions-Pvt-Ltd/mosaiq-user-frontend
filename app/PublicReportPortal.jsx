@@ -75,6 +75,36 @@ function displayText(value) {
   return value;
 }
 
+
+function itemTooltip(item, currency = 'CAD', fallbackFormat = 'number') {
+  const parts = [];
+  const label = displayText(item?.label || item?.title || item?.key);
+  if (label) parts.push(label);
+  const value = item?.value ?? item?.share ?? item?.percent;
+  if (value !== null && value !== undefined && value !== '') {
+    parts.push(`Value ${formatValue(value, item?.format || fallbackFormat, currency)}`);
+  }
+  if (item?.share !== null && item?.share !== undefined && item?.share !== value) {
+    parts.push(`Share ${formatValue(item.share, 'percent', currency)}`);
+  }
+  if (item?.secondary) {
+    parts.push(`${item.secondary.label || 'Secondary'} ${formatValue(item.secondary.value, item.secondary.format, currency)}`);
+  }
+  return parts.join('\n');
+}
+
+function axisTicks(values = [], format = 'number') {
+  const numeric = values.map((value) => Number(value)).filter(Number.isFinite);
+  if (!numeric.length) return [];
+  const min = Math.min(0, ...numeric);
+  const max = Math.max(...numeric, 1);
+  return [1, 0.75, 0.5, 0.25, 0].map((ratio) => ({
+    ratio,
+    value: min + (max - min) * ratio,
+    format,
+  }));
+}
+
 function errorMessage(error) {
   if (!(error instanceof ApiRequestError)) return 'Something went wrong. Please try again.';
   if (error.code === 'REPORT_NOT_FOUND') return 'Report not found.';
@@ -331,6 +361,7 @@ function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRan
   const sections = metadata?.sections || [];
   const active = sections.find((section) => section.code === activeSection);
   const dateOptions = dateRangeOptions(metadata);
+  const showTabNav = active?.tabs?.length && active.code !== 'mmm';
   return (
     <header className={styles.header}>
       <div className={styles.topbar}>
@@ -376,7 +407,7 @@ function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRan
           </div> : null}
         </div>
       </div>
-      {active?.tabs?.length ? <nav className={styles.tabs} style={active.accent ? { '--section-strong': active.accent.strong, '--section-soft': active.accent.soft } : undefined} aria-label={`${active.name} tabs`}>
+      {showTabNav ? <nav className={styles.tabs} style={active.accent ? { '--section-strong': active.accent.strong, '--section-soft': active.accent.soft } : undefined} aria-label={`${active.name} tabs`}>
         {active.tabs.map((tab) => (
           <button key={tab.code} type="button" className={tab.code === activeTab ? styles.active : ''} onClick={() => onSelectTab(active.code, tab.code)}>
             <span className={styles.tabIcon}><TabIcon name={iconForTab(tab)} /></span>
@@ -524,7 +555,7 @@ function BarList({ items = [], currency, maxValue }) {
   const max = maxValue || Math.max(1, ...items.map((item) => Number(item.share ?? item.value) || 0));
   return <div className={styles.barList}>{items.map((item) => {
     const width = Math.max(0, Math.min(100, ((Number(item.share ?? item.value) || 0) / max) * 100));
-    return <div className={styles.barRow} key={item.key || item.label}>
+    return <div className={styles.barRow} key={item.key || item.label} data-tooltip={itemTooltip(item, currency, item.format || 'number')}>
       <div><span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong></div>
       <div className={styles.barTrack}><i style={{ width: `${width}%`, background: item.color || undefined }} /></div>
       {item.secondary ? <small>{item.secondary.label}: {formatValue(item.secondary.value, item.secondary.format, currency)}</small> : null}
@@ -598,7 +629,7 @@ function AgeDistributionWidget({ widget, currency }) {
     <div className={styles.ageDistributionRows}>{items.map((item, index) => {
       const color = item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length];
       const width = Math.max(0, Math.min(100, Number(item.share ?? item.value) || 0));
-      return <div className={styles.ageDistributionRow} key={item.key || item.label} style={{ '--age-color': color }}>
+      return <div className={styles.ageDistributionRow} key={item.key || item.label} data-tooltip={itemTooltip(item, currency, item.format || 'percent')} style={{ '--age-color': color }}>
         <span>{item.label}</span>
         <i><em style={{ width: `${width}%` }} /></i>
         <strong>{formatValue(item.value, item.format, currency)}</strong>
@@ -621,7 +652,7 @@ function ProgressListWidget({ widget, currency }) {
     {widget.empty ? <p className={styles.empty}>No data for this period.</p> : <div className={`${styles.progressRows} ${isProvinceGroup(effectiveGroup) ? styles.provinceRows : ''}`}>{items.map((item, index) => {
       const color = item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length];
       const width = Math.max(0, Math.min(100, Number(item.share) || 0));
-      return <div className={`${styles.progressRow} ${groups.length ? styles.progressGroupedRow : ''} ${isProvinceGroup(effectiveGroup) ? styles.provinceRow : ''}`} key={`${item.group || 'row'}-${item.label}-${index}`} style={{ '--progress-color': color }}>
+      return <div className={`${styles.progressRow} ${groups.length ? styles.progressGroupedRow : ''} ${isProvinceGroup(effectiveGroup) ? styles.provinceRow : ''}`} key={`${item.group || 'row'}-${item.label}-${index}`} data-tooltip={itemTooltip(item, currency, item.format || 'number')} style={{ '--progress-color': color }}>
         <span className={styles.progressBadge}>{groups.length ? progressBadge(item.label) : <TabIcon name="audience" />}</span>
         <div className={styles.progressInfo}><strong>{item.label}</strong><i><em style={{ width: `${width}%` }} /></i></div>
         <div className={styles.progressValue}><strong>{formatValue(item.value, item.format, currency)}</strong>{groups.length ? null : <small>{item.format === 'percent' ? 'Share of reach' : item.label}</small>}</div>
@@ -701,25 +732,31 @@ function GeoDataTable({ widget, currency }) {
 }
 
 function GeoConcentrationChart({ widget }) {
+  const [hoverPoint, setHoverPoint] = useState(null);
   const items = widget.items || [];
   const points = items.map((item, index) => ({
     label: String(item.label || '').replace(' CMA', ''),
     value: Number(item.value) || 0,
+    format: item.format || 'number',
     x: 40 + index * (420 / Math.max(items.length - 1, 1)),
     y: 32 + (1 - ((Number(item.value) || 0) / Math.max(1, ...items.map((entry) => Number(entry.value) || 0)))) * 190,
     color: item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length],
   }));
+  const tickFormat = items.find((item) => item.format)?.format || points[0]?.format || 'number';
+  const ticks = axisTicks(points.map((point) => point.value), tickFormat);
   const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
   return <div className={styles.geoConcentrationChart}>
     <h3>{widget.title}</h3>
     <div className={styles.geoChartStage}>
+      <div className={styles.customYAxis}>{ticks.map((tick) => <span key={tick.ratio} style={{ top: `${20 + (1 - tick.ratio) * 212}px` }}>{formatValue(tick.value, tick.format)}</span>)}</div>
       <span>Key markets</span>
       <span>Concentration</span>
       <svg viewBox="0 0 520 270" aria-hidden="true">
         <path className={styles.geoAxis} d="M40 20 V232 H500" />
         <path className={styles.geoLine} d={path} />
-        {points.map((point) => <circle key={point.label} cx={point.x} cy={point.y} r="5.5" fill={point.color} stroke="#fff" strokeWidth="3" />)}
+        {points.map((point) => <circle key={point.label} cx={point.x} cy={point.y} r="6.5" fill={point.color} stroke="#fff" strokeWidth="3" onMouseEnter={() => setHoverPoint(point)} onMouseLeave={() => setHoverPoint(null)} />)}
       </svg>
+      {hoverPoint ? <div className={styles.chartTooltip} style={{ left: `${(hoverPoint.x / 520) * 100}%`, top: `${(hoverPoint.y / 270) * 100}%` }}><strong>{hoverPoint.label}</strong><b>{formatValue(hoverPoint.value, hoverPoint.format)}</b></div> : null}
       <div className={styles.geoChartLabels}>{points.map((point) => <strong key={point.label}>{point.label}</strong>)}</div>
     </div>
   </div>;
@@ -731,7 +768,7 @@ function GeoDensityGrid({ widget }) {
     <div className={styles.geoDensityHeader}><span />{(widget.columns || []).map((column) => <span key={column}>{column}</span>)}</div>
     {(widget.rows || []).map((row) => <div className={styles.geoDensityRow} key={row.label}>
       <strong>{row.label}</strong>
-      {(row.values || []).map((value, index) => <span key={`${row.label}-${index}`}>{value}</span>)}
+      {(row.values || []).map((value, index) => <span key={`${row.label}-${index}`} data-tooltip={`${row.label}\n${widget.columns?.[index] || `Value ${index + 1}`} ${value}`}>{value}</span>)}
     </div>)}
   </div>;
 }
@@ -786,7 +823,7 @@ function MmmKpiStrip({ widget, currency }) {
 function MmmOutcomeStory({ summary, composition, currency }) {
   return <article className={`${styles.mediaCard} ${styles.mmmOutcomeStory}`}>
     <div className={styles.mmmOutcomeHeader}><div><span>The outcome story</span><h2>Marketing created {summary?.items?.[1]?.value || 'meaningful'} of the result</h2><p>The model separates natural demand from the lift created by media.</p></div>{summary ? <MmmKpiStrip widget={summary} currency={currency} /> : null}</div>
-    {composition ? <div className={styles.mmmComposition}><MediaBrandDonut widget={composition} currency={currency} /><div className={styles.mmmCompositionTable}>{(composition.items || []).map((item, index) => <div key={item.key || item.label}><i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} /><span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong></div>)}</div></div> : null}
+    {composition ? <div className={styles.mmmComposition}><MediaBrandDonut widget={composition} currency={currency} hideLegend /><div className={styles.mmmCompositionTable}>{(composition.items || []).map((item, index) => <div key={item.key || item.label} data-tooltip={itemTooltip(item, currency, item.format || 'number')}><i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} /><span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong></div>)}</div></div> : null}
   </article>;
 }
 
@@ -841,6 +878,7 @@ function AudienceOverviewCard({ widget, currency }) {
 
 function AudienceProfileDonut({ widget, currency }) {
   const items = widget.items || [];
+  const [hoverItem, setHoverItem] = useState(null);
   const total = items.reduce((sum, item) => sum + (Number(item.share ?? item.value) || 0), 0) || 100;
   let angle = 0;
   const centerValue = widget.center ? formatValue(widget.center.value, widget.center.format, currency) : '100%';
@@ -853,13 +891,14 @@ function AudienceProfileDonut({ widget, currency }) {
           const start = angle;
           const end = angle + (value / total) * 360;
           angle = end;
-          return <path key={item.key || item.label} d={donutSegmentPath(110, 110, 78, start, end)} stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]} strokeWidth="34" fill="none" />;
+          return <path key={item.key || item.label} d={donutSegmentPath(110, 110, 78, start, end)} stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]} strokeWidth="34" fill="none" onMouseEnter={() => setHoverItem(item)} onMouseLeave={() => setHoverItem(null)} />;
         })}
       </svg>
       <div><strong>{centerValue}</strong><span>{centerLabel}</span></div>
+      {hoverItem ? <div className={styles.chartTooltip} style={{ left: '50%', top: '30%' }}><strong>{displayText(hoverItem.label)}</strong><b>{formatValue(hoverItem.value ?? hoverItem.share, hoverItem.format || 'percent', currency)}</b></div> : null}
     </div>
     <div className={styles.mediaDonutLegend}>{items.map((item, index) => <div key={item.key || item.label}>
-      <i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} />
+        <i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} />
       <span>{item.label}</span>
       <strong>{formatValue(item.value, item.format || 'percent', currency)}</strong>
     </div>)}</div>
@@ -901,17 +940,24 @@ function AudienceProfileLayout({ widgets, metadata }) {
 }
 
 function InsightGaugeCard({ gauge, scores, currency }) {
+  const [hoverGauge, setHoverGauge] = useState(false);
   const value = Number(gauge?.value) || 0;
   const max = Number(gauge?.max) || 100;
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
   const items = scores?.items || [];
+  const label = gauge?.label || gauge?.title || 'Opportunity score';
+  const formattedValue = formatValue(value, gauge?.format || 'number', currency);
   return <MediaCard widget={gauge || scores}>
     <div className={styles.insightGaugeBlock}>
-      <div className={styles.insightGauge} style={{ '--gauge-pct': `${pct}%` }}>
-        <div><strong>{formatValue(value, gauge?.format || 'number', currency)}%</strong><span>{gauge?.label || 'Opportunity score'}</span></div>
+      <div className={styles.insightGauge} onMouseEnter={() => setHoverGauge(true)} onMouseLeave={() => setHoverGauge(false)} style={{ '--gauge-pct': `${pct}%` }}>
+        <div className={styles.insightGaugeCenter}><strong>{formattedValue}%</strong><span>{gauge?.label || 'Opportunity score'}</span></div>
+        {hoverGauge ? <div className={styles.chartTooltip} style={{ left: '50%', top: '18%' }}>
+          <strong>{label}</strong>
+          <b>{formattedValue}</b>
+        </div> : null}
       </div>
     </div>
-    <div className={styles.insightScoreList}>{items.map((item) => <div key={item.label}>
+    <div className={styles.insightScoreList}>{items.map((item) => <div key={item.label} data-tooltip={itemTooltip(item, currency, item.format || 'number')}>
       <span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong>
     </div>)}</div>
   </MediaCard>;
@@ -952,11 +998,12 @@ function InsightLayout({ widgets, metadata }) {
   </div>;
 }
 
-function MediaBrandDonut({ widget, currency }) {
+function MediaBrandDonut({ widget, currency, hideLegend = false }) {
   const items = widget.items || [];
+  const [hoverItem, setHoverItem] = useState(null);
   const total = items.reduce((sum, item) => sum + (Number(item.share ?? item.value) || 0), 0) || 100;
   let angle = 0;
-  return <div className={styles.mediaDonutBlock}>
+  return <div className={`${styles.mediaDonutBlock} ${hideLegend ? styles.mediaDonutGraphOnly : ''}`}>
     <div className={styles.mediaDonutChart}>
       <svg viewBox="0 0 220 220" aria-hidden="true">
         {items.map((item, index) => {
@@ -964,16 +1011,17 @@ function MediaBrandDonut({ widget, currency }) {
           const start = angle;
           const end = angle + (value / total) * 360;
           angle = end;
-          return <path key={item.key || item.label} d={donutSegmentPath(110, 110, 78, start, end)} stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]} strokeWidth="34" fill="none" />;
+          return <path key={item.key || item.label} d={donutSegmentPath(110, 110, 78, start, end)} stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]} strokeWidth="34" fill="none" onMouseEnter={() => setHoverItem(item)} onMouseLeave={() => setHoverItem(null)} />;
         })}
       </svg>
       <div><strong>100%</strong><span>Reach mix</span></div>
+      {hoverItem ? <div className={styles.chartTooltip} style={{ left: '50%', top: '30%' }}><strong>{displayText(hoverItem.label)}</strong><b>{formatValue(hoverItem.value ?? hoverItem.share, hoverItem.format || 'percent', currency)}</b></div> : null}
     </div>
-    <div className={styles.mediaDonutLegend}>{items.map((item, index) => <div key={item.key || item.label}>
-      <i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} />
+    {hideLegend ? null : <div className={styles.mediaDonutLegend}>{items.map((item, index) => <div key={item.key || item.label}>
+        <i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} />
       <span>{item.label}</span>
       <strong>{formatValue(item.value, item.format || 'percent', currency)}</strong>
-    </div>)}</div>
+    </div>)}</div>}
   </div>;
 }
 
@@ -983,12 +1031,13 @@ function MediaBrandHeatmap({ widget }) {
     <div className={styles.mediaHeatmapHeader} style={{ '--media-columns': columns.length + 1 }}><span>{displayText(widget.rows?.[0]?.label ? '' : 'Interest')}</span>{columns.map((column) => <span key={column}>{column}</span>)}</div>
     {(widget.rows || []).map((row) => <div className={styles.mediaHeatmapRow} key={row.label} style={{ '--media-columns': columns.length + 1 }}>
       <strong>{row.label}</strong>
-      {(row.values || []).map((value, index) => <span key={`${row.label}-${index}`}>{value}</span>)}
+      {(row.values || []).map((value, index) => <span key={`${row.label}-${index}`} data-tooltip={`${row.label}\n${columns[index] || `Value ${index + 1}`} ${value}`}>{value}</span>)}
     </div>)}
   </div>;
 }
 
 function MediaSeasonalityChart({ widget }) {
+  const [hoverPoint, setHoverPoint] = useState(null);
   const items = widget.items || [];
   const values = items.map((item) => Number(item.value) || 0);
   const min = Math.min(...values, 0);
@@ -996,18 +1045,23 @@ function MediaSeasonalityChart({ widget }) {
   const points = items.map((item, index) => ({
     label: item.label,
     value: Number(item.value) || 0,
+    format: item.format || 'number',
     x: 34 + index * (430 / Math.max(items.length - 1, 1)),
     y: 28 + (1 - (((Number(item.value) || 0) - min) / Math.max(max - min, 1))) * 174,
     color: item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length],
   }));
+  const tickFormat = items.find((item) => item.format)?.format || points[0]?.format || 'number';
+  const ticks = axisTicks(points.map((point) => point.value), tickFormat);
   const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
   return <div className={styles.mediaSeasonalityChart}>
+    <div className={styles.customYAxis}>{ticks.map((tick) => <span key={tick.ratio} style={{ top: `${20 + (1 - tick.ratio) * 184}px` }}>{formatValue(tick.value, tick.format)}</span>)}</div>
     <div><span>Seasonal weight</span><span>Campaign window</span></div>
     <svg viewBox="0 0 500 240" aria-hidden="true">
       <path className={styles.geoAxis} d="M34 20 V204 H476" />
       <path className={styles.geoLine} d={path} />
-      {points.map((point) => <circle key={point.label} cx={point.x} cy={point.y} r="4.5" fill={point.color} stroke="#fff" strokeWidth="3" />)}
+      {points.map((point) => <circle key={point.label} cx={point.x} cy={point.y} r="6" fill={point.color} stroke="#fff" strokeWidth="3" onMouseEnter={() => setHoverPoint(point)} onMouseLeave={() => setHoverPoint(null)} />)}
     </svg>
+    {hoverPoint ? <div className={styles.chartTooltip} style={{ left: `${(hoverPoint.x / 500) * 100}%`, top: `${(hoverPoint.y / 240) * 100}%` }}><strong>{hoverPoint.label}</strong><b>{formatValue(hoverPoint.value, hoverPoint.format)}</b></div> : null}
     <div className={styles.mediaSeasonalityLabels}>{points.map((point) => <strong key={point.label}>{point.label}</strong>)}</div>
   </div>;
 }
@@ -1068,7 +1122,7 @@ function BehaviourProgress({ widget, currency }) {
     {items.map((item, index) => {
       const color = item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length];
       const width = Math.max(0, Math.min(100, Number(item.share ?? item.value) || 0));
-      return <div className={styles.behaviourProgressRow} key={item.key || item.label} style={{ '--behaviour-color': color }}>
+      return <div className={styles.behaviourProgressRow} key={item.key || item.label} data-tooltip={itemTooltip(item, currency, item.format || 'number')} style={{ '--behaviour-color': color }}>
         <span>{item.label}</span>
         <i><em style={{ width: `${width}%` }} /></i>
         <strong>{formatValue(item.value, item.format, currency)}</strong>
@@ -1082,7 +1136,7 @@ function BehaviourHeatmap({ widget }) {
     <div className={styles.behaviourHeatmapHeader}><span>{displayText(widget.rows?.[0]?.label ? '' : 'Attitude strength')}</span>{(widget.columns || []).map((column) => <span key={column}>{column}</span>)}</div>
     {(widget.rows || []).map((row) => <div className={styles.behaviourHeatmapRow} key={row.label}>
       <strong>{row.label}</strong>
-      {(row.values || []).map((value, index) => <span key={`${row.label}-${index}`}>{value}</span>)}
+      {(row.values || []).map((value, index) => <span key={`${row.label}-${index}`} data-tooltip={`${row.label}\n${widget.columns?.[index] || `Value ${index + 1}`} ${value}`}>{value}</span>)}
     </div>)}
   </div>;
 }
@@ -1272,7 +1326,7 @@ function CreativeGrid({ widget, currency }) {
       {widget.subtitle ? <p>{widget.subtitle}</p> : null}
     </div>
     <div className={styles.creativeFilters}>
-      <input placeholder="Filter creatives..." value={search} onChange={(event) => setSearch(event.target.value)} />
+        <input placeholder="Filter creatives..." value={search} onChange={(event) => setSearch(event.target.value)} />
       <select value={type} onChange={(event) => setType(event.target.value)}><option value="">All types</option>{types.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select value={platform} onChange={(event) => setPlatform(event.target.value)}><option value="">All platforms</option>{platforms.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((value) => <option key={value} value={value}>{value}</option>)}</select>
@@ -1325,6 +1379,7 @@ function polarPoint(cx, cy, radius, angle) {
 
 function GenderSplitWidget({ widget, currency }) {
   const items = widget.items || [];
+  const [hoverItem, setHoverItem] = useState(null);
   const total = items.reduce((sum, item) => sum + (Number(item.share ?? item.value) || 0), 0) || 100;
   let angle = 0;
   return <div className={styles.genderSplitWidget}>
@@ -1335,10 +1390,11 @@ function GenderSplitWidget({ widget, currency }) {
           const start = angle;
           const end = angle + (value / total) * 360;
           angle = end;
-          return <path key={item.key || item.label} d={donutSegmentPath(110, 110, 84, start, end)} stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]} strokeWidth="36" fill="none" />;
+          return <path key={item.key || item.label} d={donutSegmentPath(110, 110, 84, start, end)} stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]} strokeWidth="36" fill="none" onMouseEnter={() => setHoverItem(item)} onMouseLeave={() => setHoverItem(null)} />;
         })}
       </svg>
       <div><strong>100%</strong><span>Split</span></div>
+      {hoverItem ? <div className={styles.chartTooltip} style={{ left: '50%', top: '30%' }}><strong>{displayText(hoverItem.label)}</strong><b>{formatValue(hoverItem.value ?? hoverItem.share, hoverItem.format || 'percent', currency)}</b></div> : null}
     </div>
     <div className={styles.genderSplitLegend}>{items.map((item, index) => (
       <div key={item.key || item.label}>
@@ -1422,8 +1478,8 @@ function Donut({ widget, currency, onChannel, metadata, range, setRange }) {
             const share = item.share ?? item.percent ?? item.value;
             const spend = item.spend ?? item.amount ?? item.secondary_value;
             return (
-              <button key={item.key || item.label || index} type="button" onClick={() => item.key && onChannel?.(item.key)}>
-                <i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} />
+              <button key={item.key || item.label || index} type="button" data-tooltip={`${item.label}\nShare ${formatValue(share, 'percent', currency)}${spend !== undefined && spend !== null ? `\nSpend ${formatValue(spend, item.spend_format || item.secondary_format || 'currency', currency)}` : ''}`} onClick={() => item.key && onChannel?.(item.key)}>
+        <i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} />
                 <span>
                   <b>{item.label}</b>
                   {spend !== undefined && spend !== null ? <small>{formatValue(spend, item.spend_format || item.secondary_format || 'currency', currency)}</small> : null}
@@ -1442,7 +1498,7 @@ function Gauge({ widget, currency }) {
   if (isBudgetUtilization(widget)) return <BudgetUtilizationWidget widget={widget} currency={currency} />;
   const pct = Math.max(0, Math.min(100, ((Number(widget.value) || 0) / (Number(widget.max) || 100)) * 100));
   return <div className={styles.gaugeWrap}>
-    <div className={styles.gauge} style={{ '--pct': `${pct}%` }}><strong>{formatValue(widget.value, widget.format, currency)}</strong><span>{widget.label}</span></div>
+    <div className={styles.gauge} data-tooltip={`${widget.label || widget.title || 'Value'}\n${formatValue(widget.value, widget.format, currency)}`} style={{ '--pct': `${pct}%` }}><strong>{formatValue(widget.value, widget.format, currency)}</strong><span>{widget.label}</span></div>
     <div className={styles.detailList}>{widget.status ? <StatusChip status={widget.status} /> : null}{(widget.details || []).map((detail) => <p key={detail.label}><span>{detail.label}</span><strong>{formatValue(detail.value, detail.format, currency)}</strong></p>)}</div>
   </div>;
 }
@@ -1704,7 +1760,7 @@ function InsightBulletList({ items, tone }) {
       {items.map((item, index) => (
         <div className={styles.insightRow} key={`${tone}-${index}-${item}`}>
           <span className={`${styles.insightPointIcon} ${tone === 'good' ? styles.insightGood : styles.insightBad}`}>
-            <InsightIcon tone={tone} />
+        <insightIcon tone={tone} />
           </span>
           <p>{item}</p>
         </div>
@@ -1954,6 +2010,14 @@ export default function PublicReportPortal({ token }) {
     </main>
   );
 }
+
+
+
+
+
+
+
+
 
 
 
