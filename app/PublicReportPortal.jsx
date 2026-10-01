@@ -697,12 +697,14 @@ function dataColumnKey(column) {
     content: 'field',
     topic: 'field',
     moment: 'field',
+    brand: 'field',
     metric: 'metric',
     source: 'field',
     recommendation: 'recommendation',
     'insight type': 'field',
     pattern: 'value',
     value: 'value',
+    'position & momentum': 'value',
     importance: 'value',
     spending: 'value',
     direction: 'value',
@@ -723,6 +725,7 @@ function dataColumnKey(column) {
     'activation note': 'note',
     'use in creative': 'note',
     'planning cue': 'note',
+    'how the 2027 plan answers': 'note',
     reason: 'reason',
     role: 'note',
     'use case': 'note',
@@ -940,12 +943,12 @@ function AudienceProfileLayout({ widgets, metadata }) {
   const byCode = new Map(widgets.map((widget) => [widget.code, widget]));
   const left = [
     byCode.get('audience_overview'),
-    byCode.get('audience_by_segment'),
     byCode.get('language_province_mix'),
     byCode.get('language_reach'),
     byCode.get('language_insights'),
   ].filter(Boolean);
   const right = [
+    byCode.get('audience_by_segment'),
     byCode.get('cultural_identity'),
     byCode.get('religion_faith'),
     byCode.get('generation_split'),

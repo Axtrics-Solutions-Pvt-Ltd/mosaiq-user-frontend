@@ -112,3 +112,13 @@
 .progressSecondary{align-content:center!important;justify-items:center!important;gap:0!important;padding:0 10px!important}
 .progressSecondary strong{margin:0!important;font-size:17px!important;line-height:.9!important;font-weight:600!important}
 .progressSecondary small{margin-top:5px!important;font-size:11px!important;line-height:1!important;transform:none}
+
+/* Match Channel ROAS pill spacing to secondary metric pills. */
+.channelRoasPill{align-content:center!important;justify-items:center!important;gap:0!important;padding:0 10px!important}
+.channelRoasPill strong{margin:0!important;line-height:.9!important;font-weight:600!important}
+.channelRoasPill span{margin-top:5px!important;font-size:11px!important;line-height:1!important}
+
+/* Media seasonality chart: keep y-axis ticks compact and style only the heading row. */
+.mediaSeasonalityChart>.customYAxis span{font-size:10px!important;font-weight:500!important;letter-spacing:0!important;text-transform:none!important;text-align:right!important;color:#667391!important;line-height:1!important}
+.mediaSeasonalityChart>div:nth-of-type(2){display:grid!important;grid-template-columns:1fr 1fr!important;margin:8px 0 -4px!important}
+.mediaSeasonalityChart>div:nth-of-type(2) span{color:#72809d!important;font-size:16px!important;font-weight:400!important;letter-spacing:.08em!important;text-transform:uppercase!important;text-align:center!important}
