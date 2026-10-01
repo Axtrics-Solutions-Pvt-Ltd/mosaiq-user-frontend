@@ -1760,7 +1760,7 @@ function InsightBulletList({ items, tone }) {
       {items.map((item, index) => (
         <div className={styles.insightRow} key={`${tone}-${index}-${item}`}>
           <span className={`${styles.insightPointIcon} ${tone === 'good' ? styles.insightGood : styles.insightBad}`}>
-        <insightIcon tone={tone} />
+        <InsightIcon tone={tone} />
           </span>
           <p>{item}</p>
         </div>
