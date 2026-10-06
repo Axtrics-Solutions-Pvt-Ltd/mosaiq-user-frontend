@@ -2035,6 +2035,10 @@ export default function PublicReportPortal({ token }) {
   const [tabStatus, setTabStatus] = useState('idle');
   const [tabError, setTabError] = useState(null);
 
+  useEffect(() => {
+    document.title = metadata?.report?.name || 'MOSAIQ Report';
+  }, [metadata?.report?.name]);
+
   const loadMetadata = useCallback(async (nextAccessToken = accessToken) => {
     setMetadataStatus('loading');
     setMetadataError(null);
