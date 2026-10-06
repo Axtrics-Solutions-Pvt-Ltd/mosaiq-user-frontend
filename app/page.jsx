@@ -259,6 +259,13 @@ const INTELLIGENCE_TABS = [
   'Media & Brand Intelligence',
   'Insights & Comparison'
 ];
+const INTELLIGENCE_SEGMENTS = [
+  { value: 'south_asian', label: 'South Asian' },
+  { value: 'chinese', label: 'Chinese' },
+  { value: 'filipino', label: 'Filipino' },
+  { value: 'west_asian', label: 'West Asians' },
+  { value: 'other_multicultural', label: 'Other multicultural' }
+];
 const TAB_ICON_MAP = {
   Reporting: 'reporting',
   'Marketing Intelligence': 'intelligence',
@@ -1006,6 +1013,7 @@ function App() {
   const [area, setArea] = usePersistentState('mosaiq.area', 'Reporting');
   const [page, setPage] = usePersistentState('mosaiq.page', 'Executive Summary');
   const [range, setRange] = usePersistentState('mosaiq.range', 'Last 30 days');
+  const [selectedIntelligenceSegments, setSelectedIntelligenceSegments] = usePersistentState('mosaiq.intelligenceSegments', []);
   const [search, setSearch] = useState('');
   const [campaignSearch, setCampaignSearch] = useState('');
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -1350,7 +1358,24 @@ function App() {
                 </button>
               ))}
             </section>
-            <MarketingArea page={page} active={active} />
+            <div className="intelligence-filter-bar">
+              <details className="segment-filter">
+                <summary>
+                  <span>Audience segments</span>
+                  <strong>{selectedIntelligenceSegments.length ? `${selectedIntelligenceSegments.length} selected` : 'All segments'}</strong>
+                </summary>
+                <div className="segment-filter-menu">
+                  {INTELLIGENCE_SEGMENTS.map((segment) => (
+                    <label key={segment.value}>
+                      <input type="checkbox" checked={selectedIntelligenceSegments.includes(segment.value)} onChange={(event) => setSelectedIntelligenceSegments((current) => event.target.checked ? [...current, segment.value] : current.filter((value) => value !== segment.value))} />
+                      {segment.label}
+                    </label>
+                  ))}
+                  {selectedIntelligenceSegments.length ? <button type="button" onClick={() => setSelectedIntelligenceSegments([])}>Clear selection</button> : null}
+                </div>
+              </details>
+            </div>
+            <MarketingArea page={page} active={active} selectedSegments={selectedIntelligenceSegments} />
           </>
         )}
 
@@ -1401,22 +1426,22 @@ function ReportingArea({ page, active, activeRange, compare, search, setSearch, 
   }
 }
 
-function MarketingArea({ page, active }) {
+function MarketingArea({ page, active, selectedSegments }) {
   switch (page) {
     case 'Audience Profile':
-      return <MarketingAudienceProfilePage active={active} />;
+      return <MarketingAudienceProfilePage active={active} selectedSegments={selectedSegments} />;
     case 'Demographic Profile':
-      return <MarketingDemographicsPage />;
+      return <MarketingDemographicsPage selectedSegments={selectedSegments} />;
     case 'Geographic Insights':
-      return <MarketingGeographicInsightsPage />;
+      return <MarketingGeographicInsightsPage selectedSegments={selectedSegments} />;
     case 'Behaviour':
-      return <MarketingBehaviourPage active={active} />;
+      return <MarketingBehaviourPage active={active} selectedSegments={selectedSegments} />;
     case 'Media & Brand Intelligence':
-      return <MarketingMediaBrandPage active={active} />;
+      return <MarketingMediaBrandPage active={active} selectedSegments={selectedSegments} />;
     case 'Insights & Comparison':
-      return <MarketingInsightsComparisonPage active={active} />;
+      return <MarketingInsightsComparisonPage active={active} selectedSegments={selectedSegments} />;
     default:
-      return <MarketingAudienceProfilePage active={active} />;
+      return <MarketingAudienceProfilePage active={active} selectedSegments={selectedSegments} />;
   }
 }
 
