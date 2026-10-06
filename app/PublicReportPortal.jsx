@@ -719,7 +719,7 @@ function AgeDistributionWidget({ widget, currency }) {
   </div>;
 }
 
-function ProgressListWidget({ widget, currency }) {
+function ProgressListWidget({ widget, currency, selectedAudiences = [] }) {
   const groups = widget.groups || [];
   const [activeGroup, setActiveGroup] = useState(groups[0]?.key || '');
   const effectiveGroup = groups.find((group) => group.key === activeGroup)?.key || groups[0]?.key || '';
@@ -740,7 +740,7 @@ function ProgressListWidget({ widget, currency }) {
         {item.secondary ? <div className={styles.progressSecondary}><strong>{formatValue(item.secondary.value, item.secondary.format, currency)}</strong><small>{item.secondary.label}</small></div> : null}
       </div>;
     })}</div>}
-    <ProgressFooter footer={widget.footer || []} currency={currency} />
+    {!(widget.code === 'audience_by_segment' && selectedAudiences.length) ? <ProgressFooter footer={widget.footer || []} currency={currency} /> : null}
   </div>;
 }
 
@@ -1019,14 +1019,14 @@ function AudienceProfileDonut({ widget, currency }) {
   </div>;
 }
 
-function AudienceProfileContent({ widget, currency }) {
-  if (widget.type === 'progress_list') return <ProgressListWidget widget={widget} currency={currency} />;
+function AudienceProfileContent({ widget, currency, selectedAudiences }) {
+  if (widget.type === 'progress_list') return <ProgressListWidget widget={widget} currency={currency} selectedAudiences={selectedAudiences} />;
   if (widget.type === 'donut') return <AudienceProfileDonut widget={widget} currency={currency} />;
   if (widget.type === 'heatmap') return <BehaviourHeatmap widget={widget} />;
   return <BehaviourTable widget={widget} currency={currency} />;
 }
 
-function AudienceProfileLayout({ widgets, metadata }) {
+function AudienceProfileLayout({ widgets, metadata, selectedAudiences }) {
   const currency = metadata?.currency || 'CAD';
   const byCode = new Map(widgets.map((widget) => [widget.code, widget]));
   const left = [
@@ -1046,7 +1046,7 @@ function AudienceProfileLayout({ widgets, metadata }) {
   ].filter(Boolean);
   const renderWidget = (widget) => widget.code === 'audience_overview'
     ? <AudienceOverviewCard key={widget.code} widget={widget} currency={currency} />
-    : <MediaCard key={widget.code} widget={widget}><AudienceProfileContent widget={widget} currency={currency} /></MediaCard>;
+    : <MediaCard key={widget.code} widget={widget}><AudienceProfileContent widget={widget} currency={currency} selectedAudiences={selectedAudiences} /></MediaCard>;
   return <div className={styles.audienceProfileLayout}>
     <div className={styles.mediaColumn}>{left.map(renderWidget)}</div>
     <div className={styles.mediaColumn}>{right.map(renderWidget)}</div>
@@ -1981,10 +1981,10 @@ const SUPPORTED_WIDGET_TYPES = new Set([
   'recommendation_list',
 ]);
 
-function renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab) {
+function renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab, selectedAudiences = []) {
   const supported = widgets.filter((widget) => SUPPORTED_WIDGET_TYPES.has(widget.type));
   if (activeTab === 'mmm') return <MmmLayout widgets={supported} metadata={metadata} />;
-  if (activeTab === 'audience_profile') return <AudienceProfileLayout widgets={supported} metadata={metadata} />;
+  if (activeTab === 'audience_profile') return <AudienceProfileLayout widgets={supported} metadata={metadata} selectedAudiences={selectedAudiences} />;
   if (activeTab === 'geographic_insights') return <GeographicInsightsLayout widgets={supported} metadata={metadata} />;
   if (activeTab === 'behaviour') return <BehaviourLayout widgets={supported} metadata={metadata} />;
   if (activeTab === 'media_brand') return <MediaBrandLayout widgets={supported} metadata={metadata} />;
@@ -2114,8 +2114,8 @@ export default function PublicReportPortal({ token }) {
     if (tabStatus === 'error') return <ApiErrorState compact title="We couldn't load this tab" message={errorMessage(tabError)} onRetry={() => setRange((current) => ({ ...current }))} />;
     const widgets = tabData?.widgets || [];
     if (!widgets.length) return <div className={styles.emptyTab}>No widgets are enabled for this tab.</div>;
-    return renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab);
-  }, [activeTab, metadata, range, setChannel, tabData, tabError, tabStatus]);
+    return renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab, selectedAudiences);
+  }, [activeTab, metadata, range, selectedAudiences, setChannel, tabData, tabError, tabStatus]);
 
   async function handleUnlock(password) {
     setUnlocking(true);
