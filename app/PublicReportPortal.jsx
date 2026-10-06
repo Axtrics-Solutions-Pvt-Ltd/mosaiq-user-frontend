@@ -419,7 +419,7 @@ function SegmentFilter({ options, selectedAudiences, setSelectedAudiences }) {
       <span>Audience</span>
       <strong>{selectedAudiences.length === 1
         ? options.find((option) => option.code === selectedAudiences[0])?.label || '1 selected'
-        : selectedAudiences.length > 1 ? `${selectedAudiences.length} selected` : 'All audiences'}</strong>
+        : selectedAudiences.length > 1 ? `${selectedAudiences.length} selected` : 'All'}</strong>
     </summary>
     <div className={styles.segmentFilterMenu}>
       {options.map((audience) => <label key={audience.code}>
