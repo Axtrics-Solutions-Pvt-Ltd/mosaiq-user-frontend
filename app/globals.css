@@ -2662,6 +2662,17 @@ body {
   gap: 12px;
 }
 
+.intelligence-filter-bar { display: flex; justify-content: flex-end; margin: 14px 0 0; }
+.segment-filter { position: relative; z-index: 3; }
+.segment-filter summary { display: flex; align-items: center; gap: 12px; min-height: 40px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; color: var(--muted); background: #fff; cursor: pointer; font-size: 12px; list-style: none; }
+.segment-filter summary::-webkit-details-marker { display: none; }
+.segment-filter summary::after { content: '⌄'; color: var(--muted); font-size: 14px; }
+.segment-filter summary strong { color: var(--text); font-weight: 600; }
+.segment-filter-menu { position: absolute; top: calc(100% + 6px); right: 0; display: grid; gap: 8px; width: 220px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #fff; box-shadow: 0 12px 28px rgba(15, 23, 42, .12); }
+.segment-filter-menu label { display: flex; align-items: center; gap: 8px; color: var(--text); cursor: pointer; font-size: 13px; }
+.segment-filter-menu input { accent-color: var(--accent); }
+.segment-filter-menu button { border: 0; border-top: 1px solid var(--line); padding: 8px 0 0; color: var(--accent); background: transparent; cursor: pointer; font: inherit; font-size: 12px; text-align: left; }
+
 .compact {
   width: 176px;
 }

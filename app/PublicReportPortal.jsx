@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiRequestError } from '../lib/api';
 import { publicReportApi } from '../lib/public-report-api';
 import { ApiErrorState, ButtonProgress, FullPageLoader, InlineLoader } from './components/states';
@@ -23,7 +23,6 @@ const TAB_ICON_MAP = {
   media_brand_intelligence: 'channels',
   insights_comparison: 'opportunity',
 };
-
 function unwrap(response) {
   return response?.data ?? response;
 }
@@ -138,6 +137,32 @@ function syncSelectionToUrl(section, tab) {
   url.searchParams.set('section', section);
   url.searchParams.set('tab', tab);
   window.history.replaceState(null, '', url.toString());
+}
+
+function syncChannelToUrl(channel) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (channel) url.searchParams.set('channel', channel);
+  else url.searchParams.delete('channel');
+  window.history.replaceState(null, '', url.toString());
+}
+
+function syncAudiencesToUrl(audiences) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (audiences.length) url.searchParams.set('audiences', audiences.join(','));
+  else url.searchParams.delete('audiences');
+  window.history.replaceState(null, '', url.toString());
+}
+
+function channelColor(item, metadata, fallback) {
+  return item?.color || metadata?.theme?.channel_colors?.[item?.platform] || fallback;
+}
+
+function isInvalidChannelFilterError(error) {
+  return error instanceof ApiRequestError
+    && error.status === 422
+    && (error.code === 'VALIDATION_FAILED' || Object.prototype.hasOwnProperty.call(error.fields || {}, 'channel'));
 }
 
 function defaultRange(metadata) {
@@ -376,7 +401,43 @@ function iconForTab(tab) {
   return tab.icon || TAB_ICON_MAP[tab.code] || 'summary';
 }
 
-function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRange }) {
+function SegmentFilter({ options, selectedAudiences, setSelectedAudiences }) {
+  const filterRef = useRef(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (filterRef.current?.open && !filterRef.current.contains(event.target)) {
+        filterRef.current.open = false;
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
+  return <details ref={filterRef} className={styles.segmentFilter}>
+    <summary>
+      <span>Audience</span>
+      <strong>{selectedAudiences.length === 1
+        ? options.find((option) => option.code === selectedAudiences[0])?.label || '1 selected'
+        : selectedAudiences.length > 1 ? `${selectedAudiences.length} selected` : 'All audiences'}</strong>
+    </summary>
+    <div className={styles.segmentFilterMenu}>
+      {options.map((audience) => <label key={audience.code}>
+        <input
+          type="checkbox"
+          checked={selectedAudiences.includes(audience.code)}
+          onChange={(event) => setSelectedAudiences(event.target.checked
+            ? [...selectedAudiences, audience.code]
+            : selectedAudiences.filter((value) => value !== audience.code))}
+        />
+        {audience.label}
+      </label>)}
+      {selectedAudiences.length ? <button type="button" onClick={() => setSelectedAudiences([])}>Clear selection</button> : null}
+    </div>
+  </details>;
+}
+
+function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRange, selectedAudiences, setSelectedAudiences }) {
   const sections = metadata?.sections || [];
   const active = sections.find((section) => section.code === activeSection);
   const dateOptions = dateRangeOptions(metadata);
@@ -408,6 +469,7 @@ function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRan
           })}
         </nav>
         <div className={styles.headerActions}>
+          {activeSection === 'marketing_intelligence' && metadata?.audiences?.length ? <SegmentFilter options={metadata.audiences} selectedAudiences={selectedAudiences} setSelectedAudiences={setSelectedAudiences} /> : null}
           {dateOptions.length ? <div className={styles.headerDateControl}>
             <select className={styles.headerSelect} value={range.preset} onChange={(event) => {
               const nextPreset = event.target.value;
@@ -854,11 +916,37 @@ function MmmOutcomeStory({ summary, composition, currency }) {
   </article>;
 }
 
-function MmmWhy({ carryover, diminishing, fit, currency }) {
-  return <MediaCard widget={{ title: 'Why this is MMM', subtitle: 'Model evidence' }}>
-    {diminishing ? <div className={styles.mmmWhyText}><h3>{diminishing.headline}</h3><p>{diminishing.body}</p></div> : null}
-    {carryover ? <BehaviourProgress widget={carryover} currency={currency} /> : null}
-    {fit ? <div className={styles.mmmFitGrid}>{(fit.items || []).map((item) => <div key={item.label}><span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong></div>)}</div> : null}
+function MmmEvidence({ carryover, diminishing, fit, currency }) {
+  const [hoverPoint, setHoverPoint] = useState(null);
+  const xPositions = [42, 133, 225, 316, 408, 500];
+  const mainValues = [0.42, 0.61, 0.72, 0.79, 0.84, 0.87];
+  const growthValues = [0.05, 0.11, 0.15, 0.19, 0.22, 0.24];
+  const pointY = (value) => 194 - (value * 172);
+  const curvePath = (values) => values.map((value, index) => `${index ? 'L' : 'M'} ${xPositions[index]} ${pointY(value).toFixed(1)}`).join(' ');
+  const points = [
+    ...mainValues.map((value, index) => ({ x: xPositions[index], y: pointY(value), label: 'Mainstream', spend: `${[10, 30, 50, 70, 90, 100][index]}%`, value })),
+    ...growthValues.map((value, index) => ({ x: xPositions[index], y: pointY(value), label: 'Multicultural', spend: `${[10, 30, 50, 70, 90, 100][index]}%`, value })),
+  ];
+  return <MediaCard widget={{ title: 'Saturation and model evidence', subtitle: 'Model evidence' }}>
+    <div className={styles.mmmCurveHeader}><h3>Saturation index by spend level</h3><span>0 = unsaturated · 1 = fully saturated</span></div>
+    <div className={styles.mmmCurveChart}>
+      <svg viewBox="0 0 520 220" role="img" aria-label="Saturation index by spend level">
+        <path className={styles.mmmCurveGrid} d="M42 22H500M42 65H500M42 108H500M42 151H500M42 194H500" />
+        <path className={styles.mmmCurveAxis} d="M42 22V194H500" />
+        <path className={styles.mmmCurveMain} d={curvePath(mainValues)} />
+        <path className={styles.mmmCurveGrowth} d={curvePath(growthValues)} />
+        {points.map((point, index) => <circle key={`${point.label}-${point.spend}`} cx={point.x} cy={point.y} r="4.5" className={index < mainValues.length ? styles.mmmCurveMainPoint : styles.mmmCurveGrowthPoint} onMouseEnter={() => setHoverPoint(point)} onMouseLeave={() => setHoverPoint(null)} />)}
+        <text x="28" y="28">1</text><text x="28" y="198">0</text>
+        {[['10%',42],['30%',133],['50%',225],['70%',316],['90%',408],['100%',500]].map(([label, x]) => <text key={label} x={x} y="212" textAnchor="middle">{label}</text>)}
+      </svg>
+      {hoverPoint ? <div className={styles.chartTooltip} style={{ left: `${(hoverPoint.x / 520) * 100}%`, top: `${(hoverPoint.y / 220) * 100}%` }}>
+        <strong>{hoverPoint.label} · {hoverPoint.spend}</strong>
+        <b>Index {hoverPoint.value.toFixed(2)}</b>
+      </div> : null}
+      <div className={styles.mmmCurveLegend}><span><i className={styles.mmmCurveMainDot} />Mainstream (saturated)</span><span><i className={styles.mmmCurveGrowthDot} />Multicultural (growth potential)</span></div>
+    </div>
+    {diminishing ? <div className={styles.mmmEvidenceText}><strong>{diminishing.headline}</strong><p>{diminishing.body}</p></div> : null}
+    {carryover || fit ? <div className={styles.mmmFitGrid}>{[...(carryover?.footer || []), ...(fit?.items || [])].slice(0, 4).map((item) => <div key={item.label}><span>{item.label}</span><strong>{formatValue(item.value, item.format, currency)}</strong></div>)}</div> : null}
   </MediaCard>;
 }
 
@@ -885,9 +973,9 @@ function MmmLayout({ widgets, metadata }) {
     <MmmHero />
     <MmmContextBar />
     <MmmSteps />
-    <div className={styles.mmmTwoCol}>{input ? <MmmModelInput widget={input} /> : null}{readiness ? <MmmReadiness widget={readiness} currency={currency} /> : null}</div>
+    <div className={styles.mmmTwoCol}>{input ? <MmmModelInput widget={input} /> : null}<MmmEvidence carryover={carryover} diminishing={diminishing} fit={fit} currency={currency} /></div>
+    {readiness || diagnosis ? <div className={styles.mmmTwoCol}>{readiness ? <MmmReadiness widget={readiness} currency={currency} /> : null}{diagnosis ? <MediaCard widget={diagnosis}><BehaviourTable widget={diagnosis} currency={currency} /></MediaCard> : null}</div> : null}
     <MmmOutcomeStory summary={summary} composition={composition} currency={currency} />
-    <div className={styles.mmmTwoCol}>{diagnosis ? <MediaCard widget={diagnosis}><BehaviourTable widget={diagnosis} currency={currency} /></MediaCard> : null}<MmmWhy carryover={carryover} diminishing={diminishing} fit={fit} currency={currency} /></div>
     <article className={styles.mmmPlan}><div><span>Plan the next dollar</span><h2>Use the model to move budget before performance moves</h2><p>Recommendations balance historical performance, marginal ROAS, saturation, carryover, and the constraints you set.</p></div><strong>Expected upside vs current plan<br /><em>+6% conversions</em></strong></article>
     <div className={styles.mmmTwoCol}>{optimizer ? <MediaCard widget={{ ...optimizer, title: 'Optimizer' }}><BehaviourTable widget={optimizer} currency={currency} /></MediaCard> : null}{readout ? <MmmReadout widget={readout} /> : null}</div>
   </div>;
@@ -1143,9 +1231,8 @@ function BehaviourTable({ widget, currency }) {
 }
 
 function BehaviourProgress({ widget, currency }) {
-  const items = widget.items || [];
-  return <div className={styles.behaviourProgress}>
-    {items.map((item, index) => {
+  const groups = widget.groups || [];
+  const renderItems = (items) => items.map((item, index) => {
       const color = item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length];
       const width = Math.max(0, Math.min(100, Number(item.share ?? item.value) || 0));
       return <div className={styles.behaviourProgressRow} key={item.key || item.label} data-tooltip={itemTooltip(item, currency, item.format || 'number')} style={{ '--behaviour-color': color }}>
@@ -1153,7 +1240,15 @@ function BehaviourProgress({ widget, currency }) {
         <i><em style={{ width: `${width}%` }} /></i>
         <strong>{formatValue(item.value, item.format, currency)}</strong>
       </div>;
-    })}
+    });
+  return <div className={styles.behaviourProgress}>
+    {groups.length ? <div className={styles.behaviourProgressGroups}>{groups.map((group) => {
+      const groupItems = (widget.items || []).filter((item) => item.group === group.key);
+      return <section className={styles.behaviourProgressGroup} key={group.key}>
+        <h3>{group.label}</h3>
+        <div>{renderItems(groupItems)}</div>
+      </section>;
+    })}</div> : renderItems(widget.items || [])}
   </div>;
 }
 
@@ -1474,7 +1569,7 @@ function Donut({ widget, currency, onChannel, metadata, range, setRange }) {
                   key={item.key || item.label || index}
                   d={donutSegmentPath(140, 140, 88, start, end)}
                   fill="none"
-                  stroke={item.color || DONUT_COLORS[index % DONUT_COLORS.length]}
+                   stroke={channelColor(item, metadata, DONUT_COLORS[index % DONUT_COLORS.length])}
                   strokeWidth="38"
                   onMouseEnter={() => setHoverSegment({
                     label: item.label,
@@ -1499,13 +1594,13 @@ function Donut({ widget, currency, onChannel, metadata, range, setRange }) {
             </div>
           ) : null}
         </div>
-        <div className={styles.roasLegend}>
+         <div className={styles.roasLegend}>
           {items.map((item, index) => {
             const share = item.share ?? item.percent ?? item.value;
             const spend = item.spend ?? item.amount ?? item.secondary_value;
             return (
               <button key={item.key || item.label || index} type="button" data-tooltip={`${item.label}\nShare ${formatValue(share, 'percent', currency)}${spend !== undefined && spend !== null ? `\nSpend ${formatValue(spend, item.spend_format || item.secondary_format || 'currency', currency)}` : ''}`} onClick={() => item.key && onChannel?.(item.key)}>
-        <i style={{ background: item.color || DONUT_COLORS[index % DONUT_COLORS.length] }} />
+         <i style={{ background: channelColor(item, metadata, DONUT_COLORS[index % DONUT_COLORS.length]) }} />
                 <span>
                   <b>{item.label}</b>
                   {spend !== undefined && spend !== null ? <small>{formatValue(spend, item.spend_format || item.secondary_format || 'currency', currency)}</small> : null}
@@ -1531,7 +1626,7 @@ function Gauge({ widget, currency }) {
 
 const CHANNEL_COLORS = ['#4f83f1', '#a78bfa', '#f8cb5d', '#fb7d2b', '#5cc7ce'];
 
-function ChannelIcon({ index }) {
+function ChannelIcon({ index, platform }) {
   const common = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '1.9', strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' };
   const icons = [
     <svg {...common}><path d="M4 14c3-6 5-7 8-2s5 4 8-2" /><circle cx="8" cy="11" r="2" /></svg>,
@@ -1540,10 +1635,11 @@ function ChannelIcon({ index }) {
     <svg {...common}><path d="M5 12h8" /><circle cx="16" cy="12" r="2" /><path d="M8 16h3" /><circle cx="13" cy="16" r="1.5" /><path d="M8 8h3" /><circle cx="13" cy="8" r="1.5" /></svg>,
     <svg {...common}><path d="M5 12v4" /><path d="M9 9v10" /><path d="M13 6v12" /><path d="M17 10v6" /><path d="M21 12v2" /></svg>,
   ];
-  return icons[index % icons.length];
+  const platformIndexes = { meta_ads: 0, google_ads: 1, youtube: 2, google_analytics_4: 3, programmatic: 4 };
+  return icons[platformIndexes[platform] ?? (index % icons.length)];
 }
 
-function ChannelRoasWidget({ widget, currency }) {
+function ChannelRoasWidget({ widget, currency, metadata }) {
   const [sortBy, setSortBy] = useState('spend');
   const items = widget.items || [];
   const sortedItems = [...items].sort((a, b) => (Number(b[sortBy]) || 0) - (Number(a[sortBy]) || 0));
@@ -1559,10 +1655,10 @@ function ChannelRoasWidget({ widget, currency }) {
       </select>
     </div>
     <div className={styles.channelRows}>{sortedItems.map((item, index) => {
-      const color = item.color || CHANNEL_COLORS[index % CHANNEL_COLORS.length];
+      const color = channelColor(item, metadata, CHANNEL_COLORS[index % CHANNEL_COLORS.length]);
       const width = Math.max(6, Math.min(100, ((Number(item.share) || 0) / maxShare) * 100));
       return <div className={styles.channelRow} key={item.channel || item.label} data-tooltip={`${item.label}\nROAS ${formatValue(item.roas, 'multiplier', currency)}\nSpend ${formatValue(item.spend, 'currency', currency)}`} style={{ '--channel-color': color }}>
-        <span className={styles.channelIcon}><ChannelIcon index={index} /></span>
+         <span className={styles.channelIcon}><ChannelIcon index={index} platform={item.platform} /></span>
         <div className={styles.channelInfo}><strong>{item.label}</strong><i><em style={{ width: `${width}%` }} /></i></div>
         <div className={styles.channelSpend}><strong>{formatValue(item.spend, 'currency', currency)}</strong><span>Total Spend</span></div>
         <div className={styles.channelRoasPill}><strong>{formatValue(item.roas, 'multiplier', currency)}</strong><span>ROAS</span></div>
@@ -1836,8 +1932,8 @@ function WidgetBody({ widget, metadata, setChannel, range, setRange }) {
       if (widget.code === 'age_distribution') return <AgeDistributionWidget widget={widget} currency={currency} />;
       return <ProgressListWidget widget={normalizeAudienceProgressWidget(widget)} currency={currency} />;
     case 'channel_list':
-      if (isChannelRoas(widget)) return <ChannelRoasWidget widget={widget} currency={currency} />;
-      return <BarList items={(widget.items || []).map((item) => ({ ...item, key: item.channel, value: item.spend, format: 'currency', color: metadata?.theme?.channel_colors?.[item.channel] }))} currency={currency} />;
+      if (isChannelRoas(widget)) return <ChannelRoasWidget widget={widget} currency={currency} metadata={metadata} />;
+      return <BarList items={(widget.items || []).map((item) => ({ ...item, key: item.channel, value: item.spend, format: 'currency', color: channelColor(item, metadata) }))} currency={currency} />;
     case 'donut':
       if (widget.code === 'demographic_gender_split') return <GenderSplitWidget widget={widget} currency={currency} />;
       return <Donut widget={widget} currency={currency} onChannel={setChannel} metadata={metadata} range={range} setRange={setRange} />;
@@ -1933,6 +2029,8 @@ export default function PublicReportPortal({ token }) {
   const [activeSection, setActiveSection] = useState('');
   const [activeTab, setActiveTab] = useState('');
   const [range, setRange] = useState({ from: '', to: '', preset: 'custom' });
+  const [channel, setChannel] = useState('');
+  const [selectedAudiences, setSelectedAudiences] = useState([]);
   const [tabData, setTabData] = useState(null);
   const [tabStatus, setTabStatus] = useState('idle');
   const [tabError, setTabError] = useState(null);
@@ -1949,6 +2047,10 @@ export default function PublicReportPortal({ token }) {
         setActiveSection((current) => current || initial.section);
         setActiveTab((current) => current || initial.tab);
         setRange((current) => current.from && current.to ? current : defaultRange(next));
+        const requestedChannel = new URLSearchParams(window.location.search).get('channel') || '';
+        setChannel(requestedChannel);
+        const requestedAudiences = (new URLSearchParams(window.location.search).get('audiences') || '').split(',').map((value) => value.trim()).filter(Boolean);
+        setSelectedAudiences(Array.isArray(next.audiences) && next.audiences.length ? requestedAudiences : []);
       }
     } catch (error) {
       if (error instanceof ApiRequestError && ['PASSWORD_REQUIRED', 'TOKEN_INVALID'].includes(error.code)) {
@@ -1973,7 +2075,8 @@ export default function PublicReportPortal({ token }) {
     let alive = true;
     setTabStatus('loading');
     setTabError(null);
-    publicReportApi.getTab(token, activeTab, { from: range.from, to: range.to, accessToken }).then((response) => {
+    const audienceFilter = activeSection === 'marketing_intelligence' ? selectedAudiences : [];
+    publicReportApi.getTab(token, activeTab, { from: range.from, to: range.to, channel, audiences: audienceFilter, accessToken }).then((response) => {
       if (!alive) return;
       setTabData(unwrap(response));
       setTabStatus('ready');
@@ -1985,11 +2088,21 @@ export default function PublicReportPortal({ token }) {
         setMetadataStatus('password');
         return;
       }
+      if (channel && isInvalidChannelFilterError(error)) {
+        setChannel('');
+        syncChannelToUrl('');
+        return;
+      }
+      if (audienceFilter.length && error instanceof ApiRequestError && error.status === 422 && (error.code === 'VALIDATION_FAILED' || Object.prototype.hasOwnProperty.call(error.fields || {}, 'audiences'))) {
+        setSelectedAudiences([]);
+        syncAudiencesToUrl([]);
+        return;
+      }
       setTabError(error);
       setTabStatus('error');
     });
     return () => { alive = false; };
-  }, [accessToken, activeTab, metadataStatus, range.from, range.to, token]);
+  }, [accessToken, activeSection, activeTab, channel, metadataStatus, range.from, range.to, selectedAudiences, token]);
 
   const accent = metadata?.theme?.accent || '#5b5bd6';
   const content = useMemo(() => {
@@ -1997,8 +2110,8 @@ export default function PublicReportPortal({ token }) {
     if (tabStatus === 'error') return <ApiErrorState compact title="We couldn't load this tab" message={errorMessage(tabError)} onRetry={() => setRange((current) => ({ ...current }))} />;
     const widgets = tabData?.widgets || [];
     if (!widgets.length) return <div className={styles.emptyTab}>No widgets are enabled for this tab.</div>;
-    return renderWidgets(widgets, metadata, undefined, range, setRange, activeTab);
-  }, [activeTab, metadata, range, tabData, tabError, tabStatus]);
+    return renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab);
+  }, [activeTab, metadata, range, setChannel, tabData, tabError, tabStatus]);
 
   async function handleUnlock(password) {
     setUnlocking(true);
@@ -2029,7 +2142,10 @@ export default function PublicReportPortal({ token }) {
 
   return (
     <main className={styles.portal} style={{ '--accent': accent }}>
-      <Header metadata={metadata} activeSection={activeSection} activeTab={activeTab} onSelectTab={selectTab} range={range} setRange={setRange} />
+      <Header metadata={metadata} activeSection={activeSection} activeTab={activeTab} onSelectTab={selectTab} range={range} setRange={setRange} selectedAudiences={selectedAudiences} setSelectedAudiences={(value) => {
+        setSelectedAudiences(value);
+        syncAudiencesToUrl(value);
+      }} />
       <section className={styles.content}>
         <Filters metadata={metadata} range={range} setRange={setRange} activeSection={activeSection} />
         <div className={styles.widgets}>{content}</div>
