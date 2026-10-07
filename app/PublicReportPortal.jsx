@@ -1814,15 +1814,15 @@ function LineChartWidget({ widget, metadata, range, setRange }) {
   const innerWidth = chartWidth - pad.left - pad.right;
   const innerHeight = chartHeight - pad.top - pad.bottom;
 
-  function domainFor(seriesList) {
+  function domainFor(seriesList, headroom = 1.2) {
     const values = seriesList.flatMap((series) => (series.points || []).map((point) => Number(point.y)).filter(Number.isFinite));
     if (!values.length) return { min: 0, max: 1 };
     const max = Math.max(...values, 0);
-    return { min: 0, max: max ? max * 1.2 : 1 };
+    return { min: 0, max: max ? max * headroom : 1 };
   }
 
-  const leftDomain = domainFor(leftSeries);
-  const rightDomain = domainFor(rightSeries);
+  const leftDomain = domainFor(leftSeries, 1.8);
+  const rightDomain = domainFor(rightSeries, 1.05);
   const xFor = (index) => pad.left + (allPoints.length <= 1 ? innerWidth / 2 : (index / (allPoints.length - 1)) * innerWidth);
   const yFor = (value, domain) => pad.top + innerHeight - ((Number(value) - domain.min) / (domain.max - domain.min || 1)) * innerHeight;
   const linePath = (series) => (series.points || []).reduce((path, point, index) => {
