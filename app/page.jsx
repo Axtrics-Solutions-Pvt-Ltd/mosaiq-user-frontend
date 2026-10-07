@@ -266,6 +266,7 @@ const INTELLIGENCE_SEGMENTS = [
   { value: 'west_asian', label: 'West Asians' },
   { value: 'other_multicultural', label: 'Other multicultural' }
 ];
+const REPORTING_AUDIENCES = INTELLIGENCE_SEGMENTS;
 const TAB_ICON_MAP = {
   Reporting: 'reporting',
   'Marketing Intelligence': 'intelligence',
@@ -328,6 +329,14 @@ const TREND_METRIC_OPTIONS = [
     color: '#12b76a',
     formatValue: (value) => `${Math.round(value)}`,
     formatTick: (value) => `${value}`
+  },
+  {
+    value: 'revenue',
+    label: 'Revenue',
+    dropdownLabel: 'Spend vs Revenue',
+    color: '#0ea5e9',
+    formatValue: (value) => `$${Number(value).toFixed(1)}M`,
+    formatTick: (value) => `$${Number(value).toFixed(1)}M`
   }
 ];
 
@@ -1014,6 +1023,7 @@ function App() {
   const [page, setPage] = usePersistentState('mosaiq.page', 'Executive Summary');
   const [range, setRange] = usePersistentState('mosaiq.range', 'Last 30 days');
   const [selectedIntelligenceSegments, setSelectedIntelligenceSegments] = usePersistentState('mosaiq.intelligenceSegments', []);
+  const [selectedReportingAudiences, setSelectedReportingAudiences] = usePersistentState('mosaiq.reportingAudiences', []);
   const [search, setSearch] = useState('');
   const [campaignSearch, setCampaignSearch] = useState('');
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -1334,6 +1344,25 @@ function App() {
                 </button>
               ))}
             </section>
+            {page === 'Audience' ? (
+              <div className="intelligence-filter-bar">
+                <details className="segment-filter">
+                  <summary>
+                    <span>Audience</span>
+                    <strong>{selectedReportingAudiences.length ? `${selectedReportingAudiences.length} selected` : 'All'}</strong>
+                  </summary>
+                  <div className="segment-filter-menu">
+                    {REPORTING_AUDIENCES.map((audience) => (
+                      <label key={audience.value}>
+                        <input type="checkbox" checked={selectedReportingAudiences.includes(audience.value)} onChange={(event) => setSelectedReportingAudiences((current) => event.target.checked ? [...current, audience.value] : current.filter((value) => value !== audience.value))} />
+                        {audience.label}
+                      </label>
+                    ))}
+                    {selectedReportingAudiences.length ? <button type="button" onClick={() => setSelectedReportingAudiences([])}>Clear selection</button> : null}
+                  </div>
+                </details>
+              </div>
+            ) : null}
             <ReportingArea
               page={page}
               active={active}
@@ -4746,39 +4775,46 @@ function TrendChart({ compare, accent, range, metric = 'conversions', series = n
       spend: [16, 22, 24, 30, 33, 35],
       conversions: [500, 650, 720, 900, 1050, 1180],
       impressions: [3.6, 3.9, 4.1, 4.5, 4.8, 5.1],
-      clicks: [180, 215, 230, 275, 305, 335]
+      clicks: [180, 215, 230, 275, 305, 335],
+      revenue: [8.2, 9.1, 10.4, 12.8, 14.1, 15.6]
     },
     'Last 90 days': {
       spend: [20, 24, 28, 32, 35, 37],
       conversions: [580, 720, 820, 980, 1120, 1260],
       impressions: [4.4, 4.8, 5.1, 5.5, 5.8, 6.2],
-      clicks: [220, 255, 285, 325, 355, 390]
+      clicks: [220, 255, 285, 325, 355, 390],
+      revenue: [12.4, 13.6, 15.2, 17.1, 18.9, 20.8]
     },
     'This quarter': {
       spend: [24, 28, 30, 35, 37, 39],
       conversions: [650, 800, 900, 1050, 1180, 1350],
       impressions: [5.2, 5.6, 6.0, 6.5, 6.8, 7.2],
-      clicks: [260, 300, 335, 375, 410, 445]
+      clicks: [260, 300, 335, 375, 410, 445],
+      revenue: [16.2, 17.8, 19.4, 21.6, 23.8, 26.1]
     }
   };
   const trendMetric = getTrendMetric(metric);
   const fallbackSeries = seriesByRange[range] || seriesByRange['Last 30 days'];
   const { spend, conversions, impressions, clicks } = series || fallbackSeries;
+  const revenue = series?.revenue || fallbackSeries.revenue;
   const metricSeriesByKey = {
     conversions,
     impressions,
-    clicks
+    clicks,
+    revenue
   };
   const rightSeries = metricSeriesByKey[trendMetric.value] || conversions;
   const rightAxisMaxByMetric = {
     conversions: 1500,
     impressions: 8,
-    clicks: 500
+    clicks: 500,
+    revenue: 30
   };
   const rightAxisTicksByMetric = {
     conversions: [0, 300, 600, 900, 1200, 1500],
     impressions: [0, 2, 4, 6, 8],
-    clicks: [0, 100, 200, 300, 400, 500]
+    clicks: [0, 100, 200, 300, 400, 500],
+    revenue: [0, 6, 12, 18, 24, 30]
   };
   const spendMax = Math.max(40, ...spend.map((value) => Number(value) || 0));
   const rightMax = Math.max(rightAxisMaxByMetric[trendMetric.value] || 1500, ...rightSeries.map((value) => Number(value) || 0));
@@ -4825,6 +4861,8 @@ function TrendChart({ compare, accent, range, metric = 'conversions', series = n
         ))}
         <line x1={padL} x2={padL} y1={padT} y2={h - padB} className="axis-line" />
         <line x1={w - padR} x2={w - padR} y1={padT} y2={h - padB} className="axis-line" />
+        <text x={14} y={padT} className="axis-title axis-title-left">Spend ($K)</text>
+        <text x={w - 12} y={padT} textAnchor="end" className="axis-title axis-title-right">{trendMetric.label}</text>
         {spendTicks.map((tick) => (
           <text key={`s-${tick}`} x={padL - 10} y={ySpend(tick) + 4} textAnchor="end" className="axis-label">
             {tick === 0 ? '$0' : `$${tick}K`}
