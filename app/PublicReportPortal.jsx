@@ -2010,24 +2010,37 @@ const SUPPORTED_WIDGET_TYPES = new Set([
   'recommendation_list',
 ]);
 
-function renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab, selectedAudiences = []) {
+function AudienceUnavailableNotice({ onClear }) {
+  return <div className={styles.audienceUnavailableNotice} role="status">
+    <div>
+      <strong>Age, gender, region and device can&apos;t be split by audience.</strong>
+      <span>They cover every campaign in a channel.</span>
+    </div>
+    <button type="button" onClick={onClear}>Clear audience filter</button>
+  </div>;
+}
+
+function renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab, selectedAudiences = [], onClearAudienceFilter) {
   const supported = widgets.filter((widget) => SUPPORTED_WIDGET_TYPES.has(widget.type));
-  if (activeTab === 'mmm') return <MmmLayout widgets={supported} metadata={metadata} />;
-  if (activeTab === 'audience_profile') return <AudienceProfileLayout widgets={supported} metadata={metadata} selectedAudiences={selectedAudiences} />;
-  if (activeTab === 'geographic_insights') return <GeographicInsightsLayout widgets={supported} metadata={metadata} />;
-  if (activeTab === 'behaviour') return <BehaviourLayout widgets={supported} metadata={metadata} />;
-  if (activeTab === 'media_brand') return <MediaBrandLayout widgets={supported} metadata={metadata} />;
-  if (activeTab === 'insights_comparison') return <InsightLayout widgets={supported} metadata={metadata} />;
+  const unavailable = selectedAudiences.length ? supported.filter((widget) => widget.empty && widget.reason === 'audience_unavailable') : [];
+  const visible = unavailable.length ? supported.filter((widget) => !(widget.empty && widget.reason === 'audience_unavailable')) : supported;
+  const notice = unavailable.length ? <AudienceUnavailableNotice onClear={onClearAudienceFilter} /> : null;
+  if (activeTab === 'mmm') return <>{notice}<MmmLayout widgets={visible} metadata={metadata} /></>;
+  if (activeTab === 'audience_profile') return <>{notice}<AudienceProfileLayout widgets={visible} metadata={metadata} selectedAudiences={selectedAudiences} /></>;
+  if (activeTab === 'geographic_insights') return <>{notice}<GeographicInsightsLayout widgets={visible} metadata={metadata} /></>;
+  if (activeTab === 'behaviour') return <>{notice}<BehaviourLayout widgets={visible} metadata={metadata} /></>;
+  if (activeTab === 'media_brand') return <>{notice}<MediaBrandLayout widgets={visible} metadata={metadata} /></>;
+  if (activeTab === 'insights_comparison') return <>{notice}<InsightLayout widgets={visible} metadata={metadata} /></>;
   const output = [];
-  for (let index = 0; index < supported.length; index += 1) {
-    const widget = supported[index];
-    if (isChannelInsight(widget) && isChannelRecommendation(supported[index + 1])) {
-      output.push(<ChannelBottomPanel key="channel-bottom-panel" insight={widget} recommendations={supported[index + 1]} />);
+  for (let index = 0; index < visible.length; index += 1) {
+    const widget = visible[index];
+    if (isChannelInsight(widget) && isChannelRecommendation(visible[index + 1])) {
+      output.push(<ChannelBottomPanel key="channel-bottom-panel" insight={widget} recommendations={visible[index + 1]} />);
       index += 1;
       continue;
     }
     if (widget.type === 'text_hero') {
-      const maybeKpi = supported[index + 1]?.type === 'kpi' ? supported[index + 1] : null;
+      const maybeKpi = visible[index + 1]?.type === 'kpi' ? visible[index + 1] : null;
       output.push(<HeroWidget key={widget.code || 'report-hero'} summary={widget} kpi={maybeKpi} metadata={metadata} />);
       if (maybeKpi) index += 1;
       continue;
@@ -2037,15 +2050,15 @@ function renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab
       continue;
     }
     const group = [widget];
-    while (supported[index + 1]?.group === widget.group) {
-      group.push(supported[index + 1]);
+    while (visible[index + 1]?.group === widget.group) {
+      group.push(visible[index + 1]);
       index += 1;
     }
     output.push(<WidgetFrame key={widget.group} widget={{ ...widget, span: 2 }}>
       <div className={styles.groupedWidgets}>{group.map((item, groupIndex) => <section key={item.code || groupIndex}>{groupIndex > 0 ? <h3>{item.title}</h3> : null}<WidgetBody widget={item} metadata={metadata} setChannel={setChannel} range={range} setRange={setRange} /></section>)}</div>
     </WidgetFrame>);
   }
-  return output;
+  return <>{notice}{output}</>;
 }
 
 export default function PublicReportPortal({ token }) {
@@ -2144,7 +2157,11 @@ export default function PublicReportPortal({ token }) {
     if (tabStatus === 'error') return <ApiErrorState compact title="We couldn't load this tab" message={errorMessage(tabError)} onRetry={() => setRange((current) => ({ ...current }))} />;
     const widgets = tabData?.widgets || [];
     if (!widgets.length) return <div className={styles.emptyTab}>No widgets are enabled for this tab.</div>;
-    return renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab, selectedAudiences);
+    const appliedAudiences = Array.isArray(tabData?.audiences) ? tabData.audiences : selectedAudiences;
+    return renderWidgets(widgets, metadata, setChannel, range, setRange, activeTab, appliedAudiences, () => {
+      setSelectedAudiences([]);
+      syncAudiencesToUrl([]);
+    });
   }, [activeTab, metadata, range, selectedAudiences, setChannel, tabData, tabError, tabStatus]);
 
   async function handleUnlock(password) {
