@@ -68,6 +68,10 @@ function formatCompactPercent(value) {
   return `${new Intl.NumberFormat('en-CA', { notation: 'compact', maximumFractionDigits: 2 }).format(number)}%`;
 }
 
+function emptyMessage(widget, fallback = 'No data for this period.') {
+  return widget?.reason === 'audience_unavailable' ? 'Not available by audience' : fallback;
+}
+
 function displayText(value) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'object') return value.label ?? value.value ?? value.name ?? value.title ?? value.key ?? '';
@@ -401,8 +405,16 @@ function iconForTab(tab) {
   return tab.icon || TAB_ICON_MAP[tab.code] || 'summary';
 }
 
-function SegmentFilter({ options, selectedAudiences, setSelectedAudiences }) {
+function audienceFilterEnabled(metadata, activeSection, activeTab) {
+  const section = (metadata?.sections || []).find((item) => item.code === activeSection);
+  const tab = (section?.tabs || []).find((item) => item.code === activeTab);
+  if (typeof tab?.audience_filter === 'boolean') return tab.audience_filter;
+  return activeSection === 'marketing_intelligence';
+}
+
+function SegmentFilter({ options, untaggedOption, selectedAudiences, setSelectedAudiences }) {
   const filterRef = useRef(null);
+  const allOptions = untaggedOption ? [...options, untaggedOption] : options;
 
   useEffect(() => {
     const handlePointerDown = (event) => {
@@ -418,7 +430,7 @@ function SegmentFilter({ options, selectedAudiences, setSelectedAudiences }) {
     <summary>
       <span>Audience</span>
       <strong>{selectedAudiences.length === 1
-        ? options.find((option) => option.code === selectedAudiences[0])?.label || '1 selected'
+        ? allOptions.find((option) => option.code === selectedAudiences[0])?.label || '1 selected'
         : selectedAudiences.length > 1 ? `${selectedAudiences.length} selected` : 'All'}</strong>
     </summary>
     <div className={styles.segmentFilterMenu}>
@@ -432,6 +444,19 @@ function SegmentFilter({ options, selectedAudiences, setSelectedAudiences }) {
         />
         {audience.label}
       </label>)}
+      {untaggedOption ? <>
+        <div className={styles.segmentFilterDivider} />
+        <label key={untaggedOption.code}>
+          <input
+            type="checkbox"
+            checked={selectedAudiences.includes(untaggedOption.code)}
+            onChange={(event) => setSelectedAudiences(event.target.checked
+              ? [...selectedAudiences, untaggedOption.code]
+              : selectedAudiences.filter((value) => value !== untaggedOption.code))}
+          />
+          {untaggedOption.label}
+        </label>
+      </> : null}
       {selectedAudiences.length ? <button type="button" onClick={() => setSelectedAudiences([])}>Clear selection</button> : null}
     </div>
   </details>;
@@ -442,6 +467,11 @@ function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRan
   const active = sections.find((section) => section.code === activeSection);
   const dateOptions = dateRangeOptions(metadata);
   const showTabNav = active?.tabs?.length && active.code !== 'mmm';
+  const audienceOptions = Array.isArray(metadata?.audiences) ? metadata.audiences : [];
+  const audienceFilterIsEnabled = audienceFilterEnabled(metadata, activeSection, activeTab);
+  const reportingAudienceTab = activeSection === 'reporting' && activeTab === 'audience';
+  const marketingAudienceSection = activeSection === 'marketing_intelligence';
+  const showAudienceFilter = audienceFilterIsEnabled && (reportingAudienceTab || marketingAudienceSection) && activeSection !== 'mmm' && activeTab !== 'reports' && audienceOptions.length;
   return (
     <header className={styles.header}>
       <div className={styles.topbar}>
@@ -469,7 +499,7 @@ function Header({ metadata, activeSection, activeTab, onSelectTab, range, setRan
           })}
         </nav>
         <div className={styles.headerActions}>
-          {activeSection === 'marketing_intelligence' && metadata?.audiences?.length ? <SegmentFilter options={metadata.audiences} selectedAudiences={selectedAudiences} setSelectedAudiences={setSelectedAudiences} /> : null}
+          {showAudienceFilter ? <SegmentFilter options={audienceOptions} selectedAudiences={selectedAudiences} setSelectedAudiences={setSelectedAudiences} /> : null}
           {dateOptions.length ? <div className={styles.headerDateControl}>
             <select className={styles.headerSelect} value={range.preset} onChange={(event) => {
               const nextPreset = event.target.value;
@@ -517,7 +547,7 @@ function WidgetFrame({ widget, children }) {
         </div>
         {widget.as_of ? <span>As of {widget.as_of}</span> : null}
       </div> : null}
-      {widget.empty && !bodyOwnsHeader ? <p className={styles.empty}>No data for this period.</p> : children}
+      {widget.empty && !bodyOwnsHeader ? <p className={styles.empty}>{emptyMessage(widget)}</p> : children}
     </article>
   );
 }
@@ -528,7 +558,7 @@ function HeroWidget({ summary, kpi, metadata }) {
     <section className={`${styles.heroCard} ${styles.span2}`}>
       <div className={styles.heroCopy}>
         <div className={styles.heroKicker}>{summary?.title || 'AI Summary'}</div>
-        {summary?.empty ? <p className={styles.empty}>No data for this period.</p> : <>
+        {summary?.empty ? <p className={styles.empty}>{emptyMessage(summary)}</p> : <>
           <h2>{summary?.headline || summary?.title || 'Report summary'}</h2>
           {summary?.body ? <p>{summary.body}</p> : null}
         </>}
@@ -537,7 +567,7 @@ function HeroWidget({ summary, kpi, metadata }) {
         <img src="/hero/executive-summary.png" alt="" />
       </div>
       {kpi ? <div className={styles.heroStat}>
-        {kpi.empty ? <p className={styles.empty}>No data for this period.</p> : <>
+        {kpi.empty ? <p className={styles.empty}>{emptyMessage(kpi)}</p> : <>
           <strong>{formatValue(kpi.value, kpi.format, currency)}</strong>
           <span>{kpi.label || kpi.title}</span>
           <Change change={kpi.change} currency={currency} />
@@ -730,7 +760,7 @@ function ProgressListWidget({ widget, currency, selectedAudiences = [] }) {
       {widget.as_of ? <span>As of {widget.as_of}</span> : null}
     </div>
     {groups.length ? <div className={styles.progressGroupToggle}>{groups.map((group) => <button key={group.key} type="button" className={group.key === effectiveGroup ? styles.active : ''} onClick={() => setActiveGroup(group.key)}><span className={styles.tabIcon}><TabIcon name={isProvinceGroup(group.key) ? 'audience' : 'globe'} /></span>{group.label}</button>)}</div> : null}
-    {widget.empty ? <p className={styles.empty}>No data for this period.</p> : <div className={`${styles.progressRows} ${isProvinceGroup(effectiveGroup) ? styles.provinceRows : ''}`}>{items.map((item, index) => {
+    {widget.empty ? <p className={styles.empty}>{emptyMessage(widget)}</p> : <div className={`${styles.progressRows} ${isProvinceGroup(effectiveGroup) ? styles.provinceRows : ''}`}>{items.map((item, index) => {
       const color = item.color || PROGRESS_COLORS[index % PROGRESS_COLORS.length];
       const width = Math.max(0, Math.min(100, Number(item.share) || 0));
       return <div className={`${styles.progressRow} ${groups.length ? styles.progressGroupedRow : ''} ${isProvinceGroup(effectiveGroup) ? styles.provinceRow : ''}`} key={`${item.group || 'row'}-${item.label}-${index}`} data-tooltip={itemTooltip(item, currency, item.format || 'number')} style={{ '--progress-color': color }}>
@@ -1681,7 +1711,7 @@ function BudgetUtilizationWidget({ widget, currency }) {
   const displayPct = Math.round(pct);
   const utilizationText = Number.isFinite(rawValue) ? formatValue(rawValue, widget.format || 'percent', currency) : `${displayPct}%`;
   const centerUtilizationText = Number.isFinite(rawValue) && (widget.format || 'percent') === 'percent' ? formatCompactPercent(rawValue) : utilizationText;
-  const statusLabel = widget.label || widget.status?.label || (widget.empty ? 'No data' : 'On pace');
+  const statusLabel = widget.label || widget.status?.label || (widget.empty ? emptyMessage(widget, 'No data') : 'On pace');
   const totalBudget = detailByLabel('total budget');
   const spent = detailByLabel('spent');
   const remaining = detailByLabel('remaining');
@@ -1696,7 +1726,7 @@ function BudgetUtilizationWidget({ widget, currency }) {
         <div><h2>{widget.title}</h2><p>{widget.subtitle || 'Track delivery against allocated budget'}</p></div>
         <select aria-label="Budget metric"><option>Pacing</option></select>
       </div>
-      <p className={styles.empty}>No budget data for this period.</p>
+      <p className={styles.empty}>{emptyMessage(widget, 'No budget data for this period.')}</p>
     </div>;
   }
 
@@ -1765,8 +1795,12 @@ function LineChartWidget({ widget, metadata, range, setRange }) {
   const defaultVariant = variants.find((variant) => variant.key === 'spend_vs_conversions') || variants[0];
   const [variantKey, setVariantKey] = useState(defaultVariant?.key || '');
   const activeVariant = variants.find((variant) => variant.key === variantKey) || defaultVariant;
-  const activeKeys = activeVariant?.series_keys || (widget.series || []).slice(0, 2).map((series) => series.key);
-  const activeSeries = (widget.series || []).filter((series) => activeKeys.includes(series.key));
+  const preparedSeries = (widget.series || []).map((series, index) => ({
+    ...series,
+    axis: series.axis || (series.key === 'spend' || index === 0 ? 'left' : 'right'),
+  }));
+  const activeKeys = activeVariant?.series_keys || preparedSeries.slice(0, 2).map((series) => series.key);
+  const activeSeries = preparedSeries.filter((series) => activeKeys.includes(series.key));
   const [hoverPoint, setHoverPoint] = useState(null);
 
   const leftSeries = activeSeries.filter((series) => series.axis !== 'right');
@@ -1784,7 +1818,7 @@ function LineChartWidget({ widget, metadata, range, setRange }) {
     const values = seriesList.flatMap((series) => (series.points || []).map((point) => Number(point.y)).filter(Number.isFinite));
     if (!values.length) return { min: 0, max: 1 };
     const max = Math.max(...values, 0);
-    return { min: 0, max: max || 1 };
+    return { min: 0, max: max ? max * 1.2 : 1 };
   }
 
   const leftDomain = domainFor(leftSeries);
@@ -1809,19 +1843,14 @@ function LineChartWidget({ widget, metadata, range, setRange }) {
         </div>
       </div>
       {widget.subtitle ? <p className={styles.chartSubtitle}>{widget.subtitle}</p> : null}
-      {widget.empty ? <p className={styles.empty}>No data for this period.</p> : <div className={styles.lineChartArea}>
-        <div className={styles.chartAxisHeader}>
-          <strong>{leftAxisLabel}</strong>
-          <div className={styles.chartLegend}>
-            {activeSeries.map((series, index) => <span key={series.key}><i style={{ background: seriesColor(series, index) }} />{series.label}</span>)}
-          </div>
-          <strong>{rightAxisLabel}</strong>
-        </div>
+      {widget.empty ? <p className={styles.empty}>{emptyMessage(widget)}</p> : <div className={styles.lineChartArea}>
         <svg className={styles.lineChartSvg} viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label={widget.title}>
           {[0, .25, .5, .75, 1].map((ratio) => {
             const y = pad.top + innerHeight - ratio * innerHeight;
             return <line key={ratio} x1={pad.left} x2={chartWidth - pad.right} y1={y} y2={y} className={styles.gridLine} />;
           })}
+          <text x={8} y={14} className={styles.chartAxisTitleLeft} style={{ fill: seriesColor(leftSeries[0], 0) }}>{leftAxisLabel}</text>
+          {rightSeries.length ? <text x={chartWidth - 8} y={14} textAnchor="end" className={styles.chartAxisTitleRight} style={{ fill: seriesColor(rightSeries[0], 1) }}>{rightAxisLabel}</text> : null}
           {[0, .25, .5, .75, 1].map((ratio) => {
             const leftValue = leftDomain.min + (leftDomain.max - leftDomain.min) * ratio;
             const rightValue = rightDomain.min + (rightDomain.max - rightDomain.min) * ratio;
@@ -2053,8 +2082,9 @@ export default function PublicReportPortal({ token }) {
         setRange((current) => current.from && current.to ? current : defaultRange(next));
         const requestedChannel = new URLSearchParams(window.location.search).get('channel') || '';
         setChannel(requestedChannel);
-        const requestedAudiences = (new URLSearchParams(window.location.search).get('audiences') || '').split(',').map((value) => value.trim()).filter(Boolean);
-        setSelectedAudiences(Array.isArray(next.audiences) && next.audiences.length ? requestedAudiences : []);
+        const requestedAudiences = (new URLSearchParams(window.location.search).get('audiences') || '').split(',').map((value) => value.trim()).filter((value) => value && value !== 'untagged');
+        const hasAudienceOptions = (Array.isArray(next.audiences) && next.audiences.length > 0) || Boolean(next.untagged_audience);
+        setSelectedAudiences(hasAudienceOptions ? requestedAudiences : []);
       }
     } catch (error) {
       if (error instanceof ApiRequestError && ['PASSWORD_REQUIRED', 'TOKEN_INVALID'].includes(error.code)) {
@@ -2079,7 +2109,7 @@ export default function PublicReportPortal({ token }) {
     let alive = true;
     setTabStatus('loading');
     setTabError(null);
-    const audienceFilter = activeSection === 'marketing_intelligence' ? selectedAudiences : [];
+    const audienceFilter = audienceFilterEnabled(metadata, activeSection, activeTab) ? selectedAudiences : [];
     publicReportApi.getTab(token, activeTab, { from: range.from, to: range.to, channel, audiences: audienceFilter, accessToken }).then((response) => {
       if (!alive) return;
       setTabData(unwrap(response));

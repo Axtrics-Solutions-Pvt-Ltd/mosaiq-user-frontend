@@ -131,6 +131,8 @@
 .mediaSeasonalityChart>div:nth-of-type(2) span{color:#72809d!important;font-size:16px!important;font-weight:400!important;letter-spacing:.08em!important;text-transform:uppercase!important;text-align:center!important}
 .segmentFilter summary::after{width:7px;height:7px;margin-left:auto;margin-top:-4px;border-right:1.5px solid #24304a;border-bottom:1.5px solid #24304a;content:"";transform:rotate(45deg)}
 .segmentFilter summary,.segmentFilter summary strong{white-space:nowrap}.segmentFilter summary strong{flex:0 0 auto}
+.chartAxisTitleLeft,.chartAxisTitleRight{fill:#52617a;font-size:10px;font-weight:700;letter-spacing:.04em}.chartAxisTitleLeft{fill:#4f8df7}.chartAxisTitleRight{fill:#8b5cf6}
+.segmentFilterDivider{height:1px;margin:2px 0;background:#e9edf5}
 .topbar{grid-template-columns:minmax(180px,1fr) auto minmax(390px,1fr)}.headerActions{min-width:0}.headerActions .segmentFilter{flex:0 1 auto;min-width:0}.headerActions .segmentFilter summary{min-width:0}.headerActions .segmentFilter summary strong{max-width:180px;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:980px){.topbar{grid-template-columns:1fr}}
 .behaviourProgressGroups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.behaviourProgressGroup{min-width:0;border:1px solid #e1e6ef;border-radius:12px;padding:12px;background:#fff}.behaviourProgressGroup h3{margin:0 0 10px;color:#071832;font-size:13px;font-weight:700}.behaviourProgressGroup>div{display:grid;gap:9px}@media(max-width:760px){.behaviourProgressGroups{grid-template-columns:1fr}}
